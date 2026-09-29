@@ -1,0 +1,1485 @@
+﻿<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracker Pengiriman Assembly</title>
+    
+    <!-- Firebase SDK Modular CDN -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCi7Tr4DDGvWg-a8Fd_tybUS7bBq0hrvaY",
+            authDomain: "summarypengiriman.firebaseapp.com",
+            projectId: "summarypengiriman",
+            storageBucket: "summarypengiriman.firebasestorage.app",
+            messagingSenderId: "726489838703",
+            appId: "1:726489838703:web:928fb059ecf661c44a499a",
+            measurementId: "G-V2H2FVXDYY"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.db = db;
+        window.fbModules = { collection, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp, query, orderBy, limit };
+        
+        initRealtimeSync();
+    </script>
+
+    <style>
+        :root {
+            --primary: #203764;
+            --primary-hover: #162646;
+            --success: #27ae60;
+            --success-hover: #1e8449;
+            --warning: #f39c12;
+            --warning-hover: #d68910;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --info: #2980b9;
+            --info-hover: #1f618d;
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --border-color: #dcdde1;
+            --text-main: #2f3640;
+        }
+
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: var(--bg-color); 
+            color: var(--text-main);
+            padding: 20px; 
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        /* --- DESAIN LOGIN SCREEN BARU --- */
+        #welcomeScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #203764 0%, #0f1c34 100%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.7s cubic-bezier(0.77, 0, 0.175, 1), opacity 0.7s ease;
+        }
+
+        #welcomeScreen.slide-out {
+            transform: translateY(-100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .welcome-title { font-size: 26px; font-weight: 700; margin-bottom: 10px; }
+        .welcome-subtitle { font-size: 14px; color: #a4b0be; margin-bottom: 30px; max-width: 600px; line-height: 1.5; }
+
+        .login-container {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 30px;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.15);
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+            backdrop-filter: blur(10px);
+        }
+
+        .login-input {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.05);
+            color: white;
+            font-size: 14px;
+            box-sizing: border-box;
+            transition: all 0.3s;
+        }
+
+        .login-input::placeholder { color: #a4b0be; }
+        .login-input:focus { outline: none; border-color: #48bb78; background: rgba(255,255,255,0.15); box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.2); }
+
+        .btn-continue {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 14px;
+            font-size: 15px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.3s, transform 0.1s;
+        }
+        .btn-continue:active { transform: scale(0.98); }
+        .btn-continue:hover { background: var(--success-hover); }
+        /* ---------------------------------- */
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .kpi-card {
+            background: white;
+            padding: 15px 18px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(32,55,100,0.05);
+            border-left: 5px solid var(--primary);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .kpi-card.success { border-left-color: var(--success); }
+        .kpi-card.warning { border-left-color: var(--warning); }
+        .kpi-card.info { border-left-color: var(--info); }
+
+        .kpi-title { font-size: 11px; font-weight: 700; color: #718093; text-transform: uppercase; margin-bottom: 6px; }
+        .kpi-value { font-size: 20px; font-weight: 700; color: var(--primary); }
+
+        .log-box {
+            background: #eef2f7;
+            border-left: 4px solid var(--info);
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: var(--primary);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .log-box strong { color: #1e3799; }
+        .btn-clear-log { background: #718093; color: white; border: none; padding: 5px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
+        .btn-clear-log:hover { background: #e74c3c; }
+
+        #undoToast {
+            visibility: hidden;
+            min-width: 280px;
+            background-color: #2f3640;
+            color: #fff;
+            border-radius: 8px;
+            padding: 12px 16px;
+            position: fixed;
+            z-index: 2000;
+            left: 20px;
+            bottom: 20px;
+            font-size: 13px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            border-left: 5px solid var(--warning);
+            transition: visibility 0.3s, opacity 0.3s, transform 0.3s;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        #undoToast.show { visibility: visible; opacity: 1; transform: translateY(0); }
+        .btn-undo-action { background: var(--warning); color: #fff; border: none; padding: 5px 10px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 11px; }
+
+        .container { 
+            max-width: 1250px; 
+            margin: 0 auto; 
+            background: var(--card-bg); 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 6px 18px rgba(32,55,100,0.08); 
+        }
+
+        h2 { 
+            color: var(--primary); 
+            border-bottom: 2px solid var(--primary); 
+            padding-bottom: 10px; 
+            margin-top: 0; 
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-title { font-size: 14px; font-weight: bold; color: var(--primary); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+
+        .form-group { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        .input-box { flex: 1; min-width: 150px; display: flex; flex-direction: column; }
+
+        label { font-size: 11px; font-weight: 700; color: #555; margin-bottom: 5px; display: flex; align-items: center; gap: 5px; }
+        input { padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px; background: #fff; }
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(32,55,100,0.1); }
+        .readonly { background: #f1f2f6; font-weight: bold; color: var(--danger); cursor: not-allowed; }
+
+        button { 
+            padding: 10px 16px; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; 
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px; 
+        }
+
+        .btn-add { background: var(--primary); width: 100%; margin-bottom: 10px; }
+        .btn-pdf { background: var(--success); width: 100%; margin-bottom: 15px; }
+        
+        .cloud-group { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .btn-backup { background: var(--info); flex: 1; min-width: 140px; }
+        .btn-restore { background: #8e44ad; flex: 1; min-width: 140px; }
+
+        .summary-box {
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 25px;
+        }
+
+        .btn-update { background: var(--warning); padding: 6px 10px; font-size: 11px; width: 100%; margin-bottom: 3px; }
+        .btn-edit { background: var(--info); padding: 6px 10px; font-size: 11px; width: 100%; margin-bottom: 3px; }
+        .btn-delete { background: var(--danger); padding: 6px 10px; font-size: 11px; width: 100%; }
+        .btn-clear { background: var(--danger); padding: 8px 12px; font-size: 12px; float: right; }
+        
+        .sort-btn { background: var(--primary-hover); border: 1px solid #4a69bd; color: #fff; font-weight: bold; cursor: pointer; padding: 3px 8px; font-size: 11px; border-radius: 4px; margin-left: 6px; }
+        .search-box { width: 100%; padding: 10px 12px; border: 1px solid var(--primary); border-radius: 6px; font-size: 13px; margin-bottom: 15px; background-color: #fcfcfc; box-sizing: border-box; }
+
+        .preview-container { border: 2px dashed var(--info); padding: 15px; border-radius: 8px; background: #f8fbff; margin-bottom: 20px; }
+        .preview-table-wrapper { max-height: 220px; overflow-y: auto; margin-top: 10px; border: 1px solid var(--border-color); border-radius: 6px; }
+        .preview-table { width: 100%; border-collapse: collapse; font-size: 11px; background: white; }
+        .preview-table th, .preview-table td { padding: 8px; border: 1px solid #e1e1e1; text-align: left; }
+        .preview-table th { background-color: var(--info); color: white; position: sticky; top: 0; z-index: 2; }
+        .preview-table tr { cursor: pointer; }
+        .preview-table tr:hover { background-color: #e2e8f0; }
+
+        .desktop-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+        .desktop-table th, .desktop-table td { padding: 10px; text-align: left; border-bottom: 1px solid #e1e1e1; vertical-align: middle; }
+        .desktop-table th { background-color: var(--primary); color: white; font-weight: 600; }
+        .desktop-table tr:hover { background-color: #f8f9fa; }
+
+        .mobile-card-container { display: none; margin-top: 10px; }
+
+        .status-close { color: var(--success); font-weight: bold; display: inline-flex; align-items: center; gap: 4px; }
+        .status-open { color: var(--danger); font-weight: bold; display: inline-flex; align-items: center; gap: 4px; }
+        .sisa-open { color: var(--danger) !important; font-weight: bold !important; }
+
+        #pdfContainer { display: none; }
+
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; padding: 15px; box-sizing: border-box; }
+        .modal-content { background: white; padding: 20px; border-radius: 10px; width: 450px; max-width: 100%; box-shadow: 0 5px 20px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
+        .modal-content h3 { margin-top: 0; color: var(--primary); border-bottom: 2px solid var(--primary); padding-bottom: 8px; font-size: 16px; }
+        .modal-buttons { display: flex; gap: 10px; margin-top: 15px; }
+        .btn-save-modal { background: var(--success); flex: 1; }
+        .btn-cancel-modal { background: var(--danger); flex: 1; }
+
+        @media screen and (max-width: 850px) {
+            body { padding: 10px; }
+            .container { padding: 15px; }
+            #tabelData { display: none; }
+            .mobile-card-container { display: flex; flex-direction: column; gap: 12px; }
+
+            .record-card {
+                background: #ffffff; border: 1px solid var(--border-color); border-radius: 10px; padding: 14px;
+                box-shadow: 0 3px 10px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 8px; border-left: 5px solid var(--primary);
+            }
+            .record-card.closed { border-left-color: var(--success); }
+            .record-card.open { border-left-color: var(--danger); }
+            .card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 6px; font-size: 12px; color: #555; }
+            .card-title { font-size: 13px; font-weight: bold; color: var(--primary); }
+            .card-body-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 12px; background: #fdfdfd; padding: 8px; border-radius: 6px; }
+            .card-footer-actions { display: flex; gap: 8px; margin-top: 6px; }
+            .card-footer-actions button { flex: 1; padding: 8px; font-size: 11px; }
+        }
+
+        /* PENGATURAN PRESISI LEBAR KOLOM CETAK PDF */
+        @media print {
+            body { background: white; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .container > *:not(#pdfContainer) { display: none !important; }
+            #pdfContainer { display: block !important; width: 100%; }
+            .pdf-section { margin-bottom: 20px; page-break-inside: avoid; }
+            .pdf-section h3 { color: var(--primary); margin-bottom: 6px; font-size: 13px; border-bottom: 2px solid var(--primary); padding-bottom: 3px; }
+            
+            .pdf-section table { width: 100%; border-collapse: collapse; border: 1px solid #000; font-size: 9.5px; table-layout: fixed; }
+            .pdf-section th, .pdf-section td { border: 1px solid #000; padding: 5px 3px; color: #000; overflow: hidden; word-wrap: break-word; }
+            
+            .pdf-section th:nth-child(1), .pdf-section td:nth-child(1) { width: 10%; } /* Job Order */
+            .pdf-section th:nth-child(2), .pdf-section td:nth-child(2) { width: 10%; } /* PO# */
+            .pdf-section th:nth-child(3), .pdf-section td:nth-child(3) { width: 11%; } /* Kode Item */
+            .pdf-section th:nth-child(4), .pdf-section td:nth-child(4) { width: 22%; } /* Nama Produk */
+            .pdf-section th:nth-child(5), .pdf-section td:nth-child(5) { width: 7%; text-align: right; }  /* Order */
+            .pdf-section th:nth-child(6), .pdf-section td:nth-child(6) { width: 7%; text-align: right; }  /* Hasil */
+            .pdf-section th:nth-child(7), .pdf-section td:nth-child(7) { width: 6%; text-align: right; }  /* Sisa */
+            .pdf-section th:nth-child(8), .pdf-section td:nth-child(8) { width: 20%; } /* Keterangan */
+            .pdf-section th:nth-child(9), .pdf-section td:nth-child(9) { width: 7%; text-align: center; } /* Status */
+
+            .pdf-section th { background-color: var(--primary) !important; color: white !important; -webkit-print-color-adjust: exact; text-align: center; }
+            
+            .pdf-status-close { color: #27ae60 !important; font-weight: bold !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .pdf-status-open { color: #e74c3c !important; font-weight: bold !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .pdf-sisa-open { color: #e74c3c !important; font-weight: bold !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            
+            h2 { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="undoToast">
+        <span id="undoMsg">Data berhasil dihapus.</span>
+        <button class="btn-undo-action" onclick="jalankanUndo()">↩️ UNDO</button>
+    </div>
+
+    <!-- TAMPILAN LOGIN SCREEN -->
+    <div id="welcomeScreen">
+        <div class="welcome-title">Summary Pengiriman Assembly</div>
+        <div class="welcome-subtitle">Sistem monitoring harian produksi, master planning, dan pelacakan pengiriman assembly terpusat cloud.</div>
+        
+        <div class="login-container">
+            <div style="font-size: 13px; color: #a4b0be; margin-bottom: 5px; font-weight: bold;">Silakan login untuk mengakses database:</div>
+            
+            <input type="text" id="loginUsername" class="login-input" placeholder="Username (cyntia_r / bayu_a)" autocomplete="off">
+            <input type="password" id="loginPassword" class="login-input" placeholder="Password">
+            
+            <button class="btn-continue" onclick="prosesLogin()" style="width: 100%; margin-top: 5px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
+                MASUK KE SISTEM
+            </button>
+            
+            <div id="loginError" style="color: #ff7675; font-size: 12px; margin-top: 5px; display: none; font-weight: bold;">⚠️ Username atau Password salah!</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            Laporan Harian: Pengiriman Assembly
+        </h2>
+
+        <div class="log-box">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: bold; color: var(--primary);">⏱️ 10 Riwayat Aktivitas Terakhir (Cloud Real-Time):</span>
+                <div>
+                    <span id="labelAdmin" style="font-size: 11px; background: #dfe6e9; color: #2d3436; padding: 5px 10px; border-radius: 12px; margin-right: 10px; font-weight: bold;">👤 Admin: -</span>
+                    <button class="btn-clear-log" onclick="prosesLogout()" style="background: #e17055; margin-right: 5px;">🚪 Keluar</button>
+                    <button class="btn-clear-log" onclick="hapusLogAktivitas()">🔒 Hapus Log</button>
+                </div>
+            </div>
+            <ul id="listActivityLog" style="margin: 0; padding-left: 18px; font-size: 12px; max-height: 140px; overflow-y: auto;">
+                <li>Memuat data riwayat dari cloud...</li>
+            </ul>
+        </div>
+        
+        <div class="kpi-grid">
+            <div class="kpi-card info">
+                <div class="kpi-title">Total Jadwal Master (Baris)</div>
+                <div class="kpi-value" id="kpiTotalJO">0</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-title">Total Target Order</div>
+                <div class="kpi-value" id="kpiTotalOrder">0</div>
+            </div>
+            <div class="kpi-card success">
+                <div class="kpi-title">Total Hasil Aktual</div>
+                <div class="kpi-value" id="kpiTotalHasil">0</div>
+            </div>
+            <div class="kpi-card warning">
+                <div class="kpi-title">Progress Penyelesaian</div>
+                <div class="kpi-value" id="kpiProgress">0%</div>
+            </div>
+        </div>
+
+        <div class="preview-container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+                <div class="section-title" style="color: var(--info); margin: 0;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    Upload Master Data File Dari ERP Pengiriman (.html)
+                </div>
+                <button type="button" onclick="hapusMasterData()" style="background: var(--danger); padding: 6px 12px; font-size: 11px;">🗑️ Kosongkan Master Data</button>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <input type="file" id="uploadMasterHtml" accept=".html,.htm" onchange="prosesUploadMaster(event)" style="flex: 1; background: white;">
+                <span id="statusUpload" style="font-size: 11px; color: #666; font-style: italic;">Belum ada file master diunggah.</span>
+            </div>
+            
+            <div id="previewWrapper" style="display: none;">
+                <div style="margin-top: 10px; font-weight: 600; font-size: 11px; color: #444;">
+                    Preview Master Data (Klik salah satu baris untuk mengisi form otomatis dari Confirm Qty):
+                </div>
+                <div class="preview-table-wrapper">
+                    <table class="preview-table" id="tabelPreviewMaster">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div class="section-title" style="margin: 0;">Form Input Pengiriman</div>
+            <button type="button" onclick="kosongkanFormInput()" style="background: #718093; padding: 5px 12px; font-size: 11px;">🔄 Kosongkan Form</button>
+        </div>
+
+        <div class="form-group">
+            <div class="input-box">
+                <label>Tanggal Pengiriman</label>
+                <input type="date" id="tanggal" required>
+            </div>
+            <div class="input-box">
+                <label>Job Order</label>
+                <input type="text" id="jobOrder" placeholder="Misal: JE26-0427" required>
+            </div>
+            <div class="input-box">
+                <label>PO#</label>
+                <input type="text" id="poNum" placeholder="Misal: 4100007558" required>
+            </div>
+            <div class="input-box">
+                <label>Kode Item</label>
+                <input type="text" id="kodeItem" placeholder="Misal: FG-C8701" required>
+            </div>
+            <div class="input-box" style="flex: 1.5;">
+                <label>Nama Produk</label>
+                <input type="text" id="produk" placeholder="Misal: Hourglass Mascara" required>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="input-box">
+                <label>Order Pengiriman Ini (Confirm Qty)</label>
+                <input type="number" id="order" placeholder="Jumlah confirm qty" oninput="hitungSisa()" required>
+            </div>
+            <div class="input-box">
+                <label>Hasil Aktual Pertama</label>
+                <input type="number" id="hasil" placeholder="Hasil assy" oninput="hitungSisa()" required>
+            </div>
+            <div class="input-box">
+                <label>Sisa Order (Otomatis)</label>
+                <input type="number" id="sisa" class="readonly" placeholder="0" readonly>
+            </div>
+            <div class="input-box" style="flex: 2;">
+                <label>Keterangan / Catatan Split (Opsional)</label>
+                <input type="text" id="ket" placeholder="Misal: pengiriman 1">
+            </div>
+        </div>
+        
+        <button class="btn-add" onclick="tambahData()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            INPUT DATA SUMMARY PENGIRIMAN
+        </button>
+        <button class="btn-pdf" onclick="cetakPDF()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            SIMPAN SEBAGAI PDF (UNTUK LAPORAN WA)
+        </button>
+        
+        <div class="cloud-group">
+            <button class="btn-backup" onclick="downloadBackup()">Backup Data (.json)</button>
+            <button class="btn-restore" onclick="document.getElementById('fileInput').click()">Pulihkan Data (Migrasi)</button>
+            <input type="file" id="fileInput" style="display: none;" accept=".json" onchange="restoreBackup(event)">
+        </div>
+
+        <!-- TABEL RINGKASAN 7 PENGIRIMAN TERDEKAT / BELUM CLOSED -->
+        <div class="summary-box">
+            <div class="section-title" style="color: var(--primary); margin-bottom: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                Ringkasan 7 Jadwal Pengiriman Terdekat & Belum Selesai (Open)
+            </div>
+            <div style="overflow-x: auto;">
+                <table id="tabelRingkasan" class="desktop-table" style="margin-top: 0; background: white; border-radius: 6px;">
+                    <thead>
+                        <tr>
+                            <th>Tanggal Pengiriman</th>
+                            <th>Total Job Order</th>
+                            <th>Status Closed</th>
+                            <th>Status Open</th>
+                            <th>Keterangan Rinci</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div style="overflow: hidden; margin-top: 15px;">
+            <h3 style="float: left; margin: 0; color: #333; font-size: 15px;">Database Pengiriman (Cloud Real-Time)</h3>
+            <button class="btn-clear" onclick="hapusSemuaData()">Hapus Semua Data</button>
+        </div>
+
+        <div style="margin-top: 12px;">
+            <input type="text" id="searchInput" class="search-box" placeholder="🔍 Cari berdasarkan Nama Produk, Job Order, PO#, atau Kode Item..." oninput="renderTabel()">
+        </div>
+
+        <table id="tabelData" class="desktop-table">
+            <thead>
+                <tr>
+                    <th>
+                        Pengiriman 
+                        <button class="sort-btn" onclick="toggleSort()" id="sortBtnText">⬆️ Terdekat</button>
+                    </th>
+                    <th>Job Order</th>
+                    <th>PO#</th>
+                    <th>Kode Item</th>
+                    <th>Nama Produk</th>
+                    <th>Order</th>
+                    <th>Hasil</th>
+                    <th>Sisa</th>
+                    <th>Keterangan</th>
+                    <th>Status</th>
+                    <th style="width: 110px;">Aksi</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div class="mobile-card-container" id="mobileCardContainer"></div>
+
+        <div id="pdfContainer"></div>
+    </div>
+
+    <!-- Modal Detail Tanggal Pengiriman (Pop-Up dari Tabel Ringkasan) -->
+    <div id="detailTanggalModal" class="modal">
+        <div class="modal-content" style="width: 750px; max-width: 95%;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); padding-bottom: 8px; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: var(--primary); border: none; padding: 0;">Rincian Pengiriman: <span id="judulDetailTanggal"></span></h3>
+                <button onclick="tutupDetailTanggal()" style="background: transparent; color: var(--danger); border: none; font-size: 18px; font-weight: bold; cursor: pointer; padding: 0;">✕</button>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="desktop-table" style="margin-top: 0; font-size: 11px;">
+                    <thead>
+                        <tr>
+                            <th>Job Order</th>
+                            <th>Kode Item</th>
+                            <th>Nama Produk</th>
+                            <th>Order</th>
+                            <th>Hasil</th>
+                            <th>Sisa</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bodyDetailTanggal"></tbody>
+                </table>
+            </div>
+            <div class="modal-buttons" style="margin-top: 15px; justify-content: flex-end;">
+                <button class="btn-cancel-modal" onclick="tutupDetailTanggal()" style="flex: none; padding: 8px 20px;">Tutup Rincian</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Detail Perubahan Log (Traceability) -->
+    <div id="logDetailModal" class="modal">
+        <div class="modal-content" style="width: 450px; max-width: 95%;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); padding-bottom: 8px; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: var(--primary); border: none; padding: 0;">Rincian Perubahan Data</h3>
+                <button onclick="tutupLogDetail()" style="background: transparent; color: var(--danger); border: none; font-size: 18px; font-weight: bold; cursor: pointer; padding: 0;">✕</button>
+            </div>
+            <div id="bodyLogDetail" style="font-size: 13px; line-height: 1.6; color: #444;">
+                <!-- Konten perubahan disisipkan di sini secara dinamis -->
+            </div>
+            <div class="modal-buttons" style="margin-top: 15px; justify-content: flex-end;">
+                <button class="btn-cancel-modal" onclick="tutupLogDetail()" style="flex: none; padding: 8px 20px;">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Form Edit Fleksibel -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h3>Koreksi Data Pengiriman</h3>
+            <input type="hidden" id="editDocId">
+            <div style="margin-bottom: 8px;"><label>Tanggal Pengiriman</label><input type="date" id="editTanggal" style="width: 100%; box-sizing: border-box;"></div>
+            <div style="margin-bottom: 8px;"><label>Job Order</label><input type="text" id="editJobOrder" style="width: 100%; box-sizing: border-box;"></div>
+            <div style="margin-bottom: 8px;"><label>PO#</label><input type="text" id="editPoNum" style="width: 100%; box-sizing: border-box;"></div>
+            <div style="margin-bottom: 8px;"><label>Kode Item</label><input type="text" id="editKodeItem" style="width: 100%; box-sizing: border-box;"></div>
+            <div style="margin-bottom: 8px;"><label>Nama Produk</label><input type="text" id="editProduk" style="width: 100%; box-sizing: border-box;"></div>
+            <div style="margin-bottom: 8px;"><label>Order</label><input type="number" id="editOrder" style="width: 100%; box-sizing: border-box;"></div>
+            <div style="margin-bottom: 8px;"><label>Hasil</label><input type="number" id="editHasil" style="width: 100%; box-sizing: border-box;"></div>
+            <div style="margin-bottom: 8px;"><label>Keterangan</label><input type="text" id="editKet" style="width: 100%; box-sizing: border-box;"></div>
+            <div class="modal-buttons">
+                <button class="btn-save-modal" onclick="simpanEditModal()">Simpan Perubahan</button>
+                <button class="btn-cancel-modal" onclick="tutupModalEdit()">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('tanggal').valueAsDate = new Date();
+
+        let database = [];
+        let sortTerbaru = false; 
+        let logDisembunyikan = false;
+        const PASS_ADMIN = "admin"; 
+        
+        // VARIABEL GLOBAL IDENTITAS LOGIN
+        let currentUser = ""; 
+
+        let lastDeletedItem = null;
+        let undoTimer = null;
+
+        // --- FITUR UX: TUTUP SEMUA JENIS MODAL DENGAN ESC ATAU KLIK LUAR JENDELA ---
+        window.addEventListener('click', function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        });
+
+        window.addEventListener('keydown', function(event) {
+            // Enter difokuskan untuk submit Login jika halaman Welcome masih terbuka
+            let welcome = document.getElementById('welcomeScreen');
+            if (event.key === 'Enter' && welcome && !welcome.classList.contains('slide-out')) {
+                prosesLogin();
+            }
+            
+            // Esc untuk menutup semua pop-up/modal
+            if (event.key === 'Escape' || event.key === 'Esc') {
+                document.querySelectorAll('.modal').forEach(modal => {
+                    if (modal.style.display === 'flex' || modal.style.display === 'block') {
+                        modal.style.display = 'none';
+                    }
+                });
+            }
+        });
+
+        // --- SISTEM VALIDASI LOGIN ADMIN ---
+        window.prosesLogin = function() {
+            let userVal = document.getElementById('loginUsername').value.trim().toLowerCase();
+            let passVal = document.getElementById('loginPassword').value.trim();
+            let errBox = document.getElementById('loginError');
+
+            if (userVal === 'cyntia_r' && passVal === 'admin') {
+                currentUser = "Cyntia R.";
+            } else if (userVal === 'bayu_a' && passVal === 'admin') {
+                currentUser = "Bayu A.";
+            } else {
+                errBox.style.display = 'block'; // Tampilkan pesan error
+                return;
+            }
+
+            // Jika berhasil masuk
+            errBox.style.display = 'none';
+            document.getElementById('welcomeScreen').classList.add('slide-out');
+            document.getElementById('labelAdmin').innerHTML = `👤 Admin: <strong>${currentUser}</strong>`;
+            
+            // Mencatat bahwa ada admin yang mengakses sistem
+            catatLogAktivitas(`Sistem diakses.`);
+        }
+
+        // --- SISTEM LOGOUT ---
+        window.prosesLogout = async function() {
+            if (confirm("Apakah Anda yakin ingin keluar dari sistem?")) {
+                if (currentUser) {
+                    await catatLogAktivitas(`Keluar dari sistem.`);
+                }
+                // Me-refresh halaman secara paksa untuk mereset seluruh variabel memori dan mengembalikan layar login
+                window.location.reload();
+            }
+        }
+
+        function initRealtimeSync() {
+            const { collection, doc, onSnapshot, query, orderBy, limit } = window.fbModules;
+            
+            onSnapshot(collection(window.db, "production_data_v2"), (snapshot) => {
+                database = [];
+                snapshot.forEach((docSnap) => {
+                    database.push({ docId: docSnap.id, ...docSnap.data() });
+                });
+                renderTabel();
+                updateGlobalKPI();
+            }, (error) => { console.error(error); });
+
+            onSnapshot(doc(window.db, "master_data", "uploaded_file"), (docSnap) => {
+                if (docSnap.exists()) {
+                    let data = docSnap.data();
+                    tampilkanMasterKePreview(data.htmlContent, data.fileName);
+                } else {
+                    kosongkanTampilanMaster();
+                }
+            }, (error) => { console.error(error); });
+
+            const qLog = query(collection(window.db, "activity_logs"), orderBy("timestamp", "desc"), limit(10));
+            onSnapshot(qLog, (snapshot) => {
+                let logContainer = document.getElementById('listActivityLog');
+                if (!logContainer) return;
+                logContainer.innerHTML = '';
+                
+                if (snapshot.empty || logDisembunyikan) {
+                    logContainer.innerHTML = `<li>Belum ada riwayat aktivitas di cloud.</li>`;
+                    return;
+                }
+
+                snapshot.forEach((docSnap) => {
+                    let data = docSnap.data();
+                    let waktuFormatted = "Waktu tidak tersedia";
+                    
+                    if (data.timestamp && data.timestamp.toDate) {
+                        let d = data.timestamp.toDate();
+                        let namaHari = d.toLocaleDateString('id-ID', { weekday: 'long' });
+                        let tgl = String(d.getDate()).padStart(2, '0');
+                        let bln = String(d.getMonth() + 1).padStart(2, '0');
+                        let thn = d.getFullYear();
+                        let jam = String(d.getHours()).padStart(2, '0');
+                        let mnt = String(d.getMinutes()).padStart(2, '0');
+                        waktuFormatted = `${namaHari}, ${tgl}-${bln}-${thn} Jam ${jam}:${mnt}`;
+                    }
+
+                    let li = document.createElement('li');
+                    li.style.marginBottom = "6px";
+                    
+                    if (data.details && Array.isArray(data.details) && data.details.length > 0) {
+                        let detailEncoded = encodeURIComponent(JSON.stringify(data.details));
+                        li.innerHTML = `<span style="color: #718093;">[${waktuFormatted}]</span> ${data.pesan} 
+                                        <button onclick="window.bukaLogDetail('${detailEncoded}')" 
+                                                style="background: #f1c40f; color: #2f3640; border: none; padding: 3px 8px; font-size: 10px; font-weight: bold; border-radius: 4px; cursor: pointer; margin-left: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                                🔍 Lihat Rincian
+                                        </button>`;
+                    } else {
+                        li.innerHTML = `<span style="color: #718093;">[${waktuFormatted}]</span> ${data.pesan}`;
+                    }
+                    
+                    logContainer.appendChild(li);
+                });
+            }, (error) => { console.error(error); });
+        }
+
+        window.bukaLogDetail = function(detailEncoded) {
+            document.getElementById('logDetailModal').style.display = 'flex';
+            let tbody = document.getElementById('bodyLogDetail');
+            
+            try {
+                let changes = JSON.parse(decodeURIComponent(detailEncoded));
+                let listHtml = `<ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #2c3e50;">`;
+                changes.forEach(c => {
+                    listHtml += `<li style="margin-bottom: 8px;">${c}</li>`;
+                });
+                listHtml += `</ul>`;
+                
+                tbody.innerHTML = `
+                    <div style="margin-bottom: 10px; font-weight: bold; color: var(--primary);">Kolom data yang diubah:</div>
+                    ${listHtml}
+                `;
+            } catch(e) {
+                tbody.innerHTML = "Gagal memuat rincian perubahan data.";
+            }
+        }
+
+        window.tutupLogDetail = function() { document.getElementById('logDetailModal').style.display = 'none'; }
+
+        // --- SISTEM PENCATATAN LOG YANG MENYEMATKAN NAMA ADMIN ---
+        async function catatLogAktivitas(pesanTeks, detailsArray = null) {
+            try {
+                const { collection, addDoc, serverTimestamp } = window.fbModules;
+                
+                // Menempelkan identitas admin yang sedang aktif
+                let pesanFinal = currentUser ? `<span style="color:var(--info); font-weight:bold;">[${currentUser}]</span> ${pesanTeks}` : pesanTeks;
+
+                let logData = { pesan: pesanFinal, timestamp: serverTimestamp() };
+                if (detailsArray) {
+                    logData.details = detailsArray; 
+                }
+                await addDoc(collection(window.db, "activity_logs"), logData);
+            } catch (err) { console.error(err); }
+        }
+
+        // --- SISTEM HAPUS LOG PERMANEN ---
+        async function hapusLogAktivitas() {
+            let passInput = prompt("MASUKKAN KATA SANDI PENANGGUNG JAWAB:");
+            if (passInput === PASS_ADMIN) {
+                if (confirm("⚠️ PERINGATAN: Yakin ingin MENGHAPUS PERMANEN seluruh riwayat log aktivitas dari server?")) {
+                    try {
+                        const { collection, getDocs, deleteDoc, doc } = window.fbModules;
+                        let btn = document.querySelector('.btn-clear-log');
+                        let originalText = btn.innerHTML;
+                        btn.innerHTML = "⏳ Menghapus...";
+                        btn.disabled = true;
+
+                        const snapshot = await getDocs(collection(window.db, "activity_logs"));
+                        let deletePromises = [];
+                        snapshot.forEach((docSnap) => {
+                            deletePromises.push(deleteDoc(doc(window.db, "activity_logs", docSnap.id)));
+                        });
+                        
+                        await Promise.all(deletePromises);
+                        
+                        logDisembunyikan = false;
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                        alert("Seluruh riwayat aktivitas berhasil dihapus permanen dari Cloud!");
+                    } catch (error) {
+                        alert("Gagal menghapus riwayat dari server.");
+                        console.error(error);
+                    }
+                }
+            } else if (passInput !== null) {
+                alert("KATA SANDI SALAH!");
+            }
+        }
+
+        async function prosesUploadMaster(event) {
+            let file = event.target.files[0];
+            if (!file) return;
+            let reader = new FileReader();
+            reader.onload = async function(e) {
+                let htmlContent = e.target.result;
+                try {
+                    const { doc, setDoc, serverTimestamp } = window.fbModules;
+                    await setDoc(doc(window.db, "master_data", "uploaded_file"), {
+                        htmlContent: htmlContent,
+                        fileName: file.name,
+                        timestamp: serverTimestamp()
+                    });
+                    logDisembunyikan = false;
+                    await catatLogAktivitas(`Upload Master <strong>${file.name}</strong> berhasil.`);
+                } catch (err) {
+                    alert("Gagal menyimpan master data ke cloud.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function tampilkanMasterKePreview(htmlContent, fileName) {
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(htmlContent, 'text/html');
+            let sourceTable = doc.querySelector('table.deliverytable') || doc.querySelector('table');
+            if (!sourceTable) return;
+
+            let targetThead = document.querySelector('#tabelPreviewMaster thead');
+            let targetTbody = document.querySelector('#tabelPreviewMaster tbody');
+            targetThead.innerHTML = sourceTable.querySelector('thead tr')?.outerHTML || sourceTable.querySelector('tr')?.outerHTML || '';
+            targetTbody.innerHTML = '';
+
+            let rows = sourceTable.querySelectorAll('tbody tr');
+            if (rows.length === 0) rows = sourceTable.querySelectorAll('tr');
+
+            let rowCount = 0;
+            rows.forEach((tr, index) => {
+                if (index === 0 && tr.querySelector('th')) return;
+                let cols = tr.querySelectorAll('td');
+                if (cols.length > 0) {
+                    rowCount++;
+                }
+
+                let newTr = tr.cloneNode(true);
+                newTr.onclick = () => isikanFormDariMaster(newTr);
+                targetTbody.appendChild(newTr);
+            });
+
+            document.getElementById('previewWrapper').style.display = 'block';
+            document.getElementById('statusUpload').innerText = `Memuat ${rowCount} data dari ${fileName}`;
+            document.getElementById('kpiTotalJO').innerText = rowCount.toLocaleString('en-US');
+        }
+
+        function kosongkanTampilanMaster() {
+            document.getElementById('previewWrapper').style.display = 'none';
+            document.querySelector('#tabelPreviewMaster thead').innerHTML = '';
+            document.querySelector('#tabelPreviewMaster tbody').innerHTML = '';
+            document.getElementById('statusUpload').innerText = 'Belum ada file master diunggah.';
+            document.getElementById('kpiTotalJO').innerText = '0';
+        }
+
+        async function hapusMasterData() {
+            let passInput = prompt("MASUKKAN KATA SANDI UNTUK MENGHAPUS MASTER DATA:");
+            if (passInput === PASS_ADMIN && confirm("Yakin ingin mengosongkan master data ERP?")) {
+                try {
+                    const { doc, deleteDoc } = window.fbModules;
+                    await deleteDoc(doc(window.db, "master_data", "uploaded_file"));
+                    logDisembunyikan = false;
+                    await catatLogAktivitas("Mengosongkan Master Data ERP.");
+                    alert("Master data berhasil dikosongkan.");
+                } catch (err) {
+                    alert("Gagal menghapus master data.");
+                }
+            } else if (passInput !== null) {
+                alert("Kata sandi salah!");
+            }
+        }
+
+        function isikanFormDariMaster(trElement) {
+            let cols = trElement.querySelectorAll('td');
+            let tglVal = cols[2] ? cols[2].innerText.trim() : '';
+            let orderVal = cols[3] ? cols[3].innerText.trim().replace(/,/g, '') : '0';
+            let prodNote = cols[5] ? cols[5].innerText.trim() : '';
+            let noteVal = cols[6] ? cols[6].innerText.trim() : '';
+            let kodeVal = cols[8] ? cols[8].innerText.trim() : '';
+            let produkVal = cols[9] ? cols[9].innerText.trim() : '';
+            let joVal = cols[4] ? cols[4].innerText.trim() : '';
+            let poVal = cols[11] ? cols[11].innerText.trim() : ''; 
+
+            let ketGabung = [];
+            if(prodNote && prodNote !== '-') ketGabung.push("Prod: " + prodNote);
+            if(noteVal) ketGabung.push(noteVal);
+
+            if (tglVal) document.getElementById('tanggal').value = tglVal;
+            if (joVal) document.getElementById('jobOrder').value = joVal;
+            if (poVal) document.getElementById('poNum').value = poVal;
+            if (kodeVal) document.getElementById('kodeItem').value = kodeVal;
+            if (produkVal) document.getElementById('produk').value = produkVal;
+            if (orderVal) document.getElementById('order').value = orderVal;
+            document.getElementById('hasil').value = '0';
+            hitungSisa();
+            if (ketGabung.length > 0) document.getElementById('ket').value = ketGabung.join(' | ');
+        }
+
+        function kosongkanFormInput() {
+            document.getElementById('tanggal').valueAsDate = new Date();
+            document.getElementById('jobOrder').value = '';
+            document.getElementById('poNum').value = '';
+            document.getElementById('kodeItem').value = '';
+            document.getElementById('produk').value = '';
+            document.getElementById('order').value = '';
+            document.getElementById('hasil').value = '';
+            document.getElementById('sisa').value = '';
+            document.getElementById('ket').value = '';
+        }
+
+        function formatTanggalID(tglStr) {
+            if (!tglStr) return '';
+            let parts = tglStr.split('-');
+            return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : tglStr;
+        }
+
+        function formatHariDanTanggal(tglStr) {
+            if (!tglStr) return '';
+            let parts = tglStr.split('-');
+            if (parts.length !== 3) return tglStr;
+            let dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+            let namaHari = dateObj.toLocaleDateString('id-ID', { weekday: 'long' });
+            return `${namaHari}, ${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+
+        function hitungSisa() {
+            let order = parseInt(document.getElementById('order').value) || 0;
+            let hasil = parseInt(document.getElementById('hasil').value) || 0;
+            document.getElementById('sisa').value = order - hasil;
+        }
+
+        function updateGlobalKPI() {
+            let totalOrder = 0, totalHasil = 0;
+            database.forEach(item => {
+                totalOrder += item.order || 0;
+                totalHasil += item.hasil || 0;
+            });
+            let progress = totalOrder > 0 ? Math.round((totalHasil / totalOrder) * 100) : 0;
+            document.getElementById('kpiTotalOrder').innerText = totalOrder.toLocaleString('en-US');
+            document.getElementById('kpiTotalHasil').innerText = totalHasil.toLocaleString('en-US');
+            document.getElementById('kpiProgress').innerText = progress + '%';
+        }
+
+        async function tambahData() {
+            let tanggal = document.getElementById('tanggal').value;
+            let jobOrder = document.getElementById('jobOrder').value.trim();
+            let poNum = document.getElementById('poNum').value.trim();
+            let kodeItem = document.getElementById('kodeItem').value.trim();
+            let produk = document.getElementById('produk').value.trim();
+            let order = parseInt(document.getElementById('order').value);
+            let hasil = parseInt(document.getElementById('hasil').value);
+            let ket = document.getElementById('ket').value.trim();
+
+            if(!tanggal || !jobOrder || !poNum || !kodeItem || !produk || isNaN(order) || isNaN(hasil)) {
+                alert("Mohon lengkapi seluruh kolom utama form.");
+                return;
+            }
+
+            let checkJO = jobOrder.toUpperCase();
+            let checkKode = kodeItem.toUpperCase();
+
+            let isDuplicate = database.some(item => {
+                let dbJO = (item.jobOrder || "").trim().toUpperCase();
+                let dbKode = (item.kodeItem || "").trim().toUpperCase();
+                
+                return item.tanggal === tanggal && dbJO === checkJO && dbKode === checkKode;
+            });
+
+            if (isDuplicate) {
+                alert(`⚠️ ALARM: DATA SUDAH TERSEDIA!\n\nJob Order: ${jobOrder}\nKode Item: ${kodeItem}\nTanggal: ${formatTanggalID(tanggal)}\n\nData pengiriman ini sudah ada di database. Silakan gunakan tombol "Update" atau "Edit" pada tabel di bawah untuk merubah hasil.`);
+                return;
+            }
+
+            let btnSubmit = document.querySelector('.btn-add');
+            btnSubmit.disabled = true;
+            btnSubmit.style.background = "#7f8fa6"; 
+            btnSubmit.innerHTML = "⏳ MENYIMPAN DATA...";
+
+            let newItem = { tanggal, jobOrder, poNum, kodeItem, produk, order, hasil, sisa: order - hasil, ket, createdAt: window.fbModules.serverTimestamp() };
+            try {
+                const { collection, addDoc } = window.fbModules;
+                await addDoc(collection(window.db, "production_data_v2"), newItem);
+                
+                logDisembunyikan = false;
+                await catatLogAktivitas(`Input JO Baru <strong>${jobOrder}</strong> (${produk}) — Order Confirm: <strong>${order.toLocaleString('en-US')}</strong>.`);
+                kosongkanFormInput();
+            } catch (error) { 
+                alert("Gagal menyimpan ke server. Pastikan koneksi internet stabil."); 
+            } finally {
+                btnSubmit.disabled = false;
+                btnSubmit.style.background = "var(--primary)";
+                btnSubmit.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> INPUT DATA SUMMARY PENGIRIMAN`;
+            }
+        }
+
+        function toggleSort() {
+            sortTerbaru = !sortTerbaru;
+            document.getElementById('sortBtnText').innerHTML = sortTerbaru ? "⬇️ Terjauh" : "⬆️ Terdekat";
+            renderTabel();
+        }
+
+        async function tambahHasil(docId) {
+            let item = database.find(i => i.docId === docId);
+            if(!item) return;
+
+            let nowLocal = new Date();
+            let todayDateStr = nowLocal.getFullYear() + '-' + String(nowLocal.getMonth() + 1).padStart(2, '0') + '-' + String(nowLocal.getDate()).padStart(2, '0');
+            
+            if (item.lastUpdatedDate === todayDateStr) {
+                let konfirmasiLanjut = confirm(`⚠️ PERINGATAN ALARM:\n\nJob Order ${item.jobOrder} sudah pernah di-update hasilnya pada hari ini (${formatTanggalID(todayDateStr)}).\n\nApakah Anda yakin ingin melakukan update tambahan lagi?`);
+                if (!konfirmasiLanjut) return;
+            }
+
+            let inputTambahan = prompt(`JOB ORDER: ${item.jobOrder}\nSisa target: ${item.sisa.toLocaleString('en-US')}\n\nMasukkan penambahan hasil produksi:`);
+            if(inputTambahan === null || inputTambahan.trim() === "") return; 
+            let tambahanVal = parseInt(inputTambahan);
+            if(isNaN(tambahanVal) || tambahanVal < 0) { alert("Angka tidak valid."); return; }
+
+            let hasilBaru = item.hasil + tambahanVal;
+            try {
+                const { doc, updateDoc } = window.fbModules;
+                await updateDoc(doc(window.db, "production_data_v2", docId), { 
+                    hasil: hasilBaru, 
+                    sisa: item.order - hasilBaru,
+                    lastUpdatedDate: todayDateStr 
+                });
+                logDisembunyikan = false;
+                await catatLogAktivitas(`Update Hasil JO <strong>${item.jobOrder}</strong> — Tambahan: <strong>+${tambahanVal.toLocaleString('en-US')}</strong>.`);
+            } catch (error) { alert("Gagal memperbarui data."); }
+        }
+
+        function bukaModalEdit(docId) {
+            let item = database.find(i => i.docId === docId);
+            if(!item) return;
+            document.getElementById('editDocId').value = item.docId;
+            document.getElementById('editTanggal').value = item.tanggal;
+            document.getElementById('editJobOrder').value = item.jobOrder;
+            document.getElementById('editPoNum').value = item.poNum || '';
+            document.getElementById('editKodeItem').value = item.kodeItem;
+            document.getElementById('editProduk').value = item.produk;
+            document.getElementById('editOrder').value = item.order;
+            document.getElementById('editHasil').value = item.hasil;
+            document.getElementById('editKet').value = item.ket || '';
+            document.getElementById('editModal').style.display = 'flex';
+        }
+
+        function tutupModalEdit() { document.getElementById('editModal').style.display = 'none'; }
+
+        async function simpanEditModal() {
+            let docId = document.getElementById('editDocId').value;
+            let tanggal = document.getElementById('editTanggal').value;
+            let jobOrder = document.getElementById('editJobOrder').value;
+            let poNum = document.getElementById('editPoNum').value;
+            let kodeItem = document.getElementById('editKodeItem').value;
+            let produk = document.getElementById('editProduk').value;
+            let order = parseInt(document.getElementById('editOrder').value);
+            let hasil = parseInt(document.getElementById('editHasil').value);
+            let ket = document.getElementById('editKet').value;
+
+            let oldItem = database.find(i => i.docId === docId);
+            let changes = [];
+            
+            if (oldItem) {
+                if (oldItem.tanggal !== tanggal) changes.push(`<strong>Tanggal:</strong> ${formatTanggalID(oldItem.tanggal)} ➔ <span style="color:var(--danger);">${formatTanggalID(tanggal)}</span>`);
+                if (oldItem.jobOrder !== jobOrder) changes.push(`<strong>Job Order:</strong> ${oldItem.jobOrder} ➔ <span style="color:var(--danger);">${jobOrder}</span>`);
+                if ((oldItem.poNum || '') !== poNum) changes.push(`<strong>PO#:</strong> ${oldItem.poNum || '-'} ➔ <span style="color:var(--danger);">${poNum}</span>`);
+                if (oldItem.kodeItem !== kodeItem) changes.push(`<strong>Kode Item:</strong> ${oldItem.kodeItem} ➔ <span style="color:var(--danger);">${kodeItem}</span>`);
+                if (oldItem.produk !== produk) changes.push(`<strong>Produk:</strong> ${oldItem.produk} ➔ <span style="color:var(--danger);">${produk}</span>`);
+                if (oldItem.order !== order) changes.push(`<strong>Order:</strong> ${oldItem.order.toLocaleString('en-US')} ➔ <span style="color:var(--danger);">${order.toLocaleString('en-US')}</span>`);
+                if (oldItem.hasil !== hasil) changes.push(`<strong>Hasil:</strong> ${oldItem.hasil.toLocaleString('en-US')} ➔ <span style="color:var(--danger);">${hasil.toLocaleString('en-US')}</span>`);
+                if ((oldItem.ket || '') !== ket) changes.push(`<strong>Ket:</strong> ${oldItem.ket || '-'} ➔ <span style="color:var(--danger);">${ket || '-'}</span>`);
+            }
+
+            try {
+                const { doc, updateDoc } = window.fbModules;
+                await updateDoc(doc(window.db, "production_data_v2", docId), { tanggal, jobOrder, poNum, kodeItem, produk, order, hasil, sisa: order - hasil, ket });
+                logDisembunyikan = false;
+                
+                if (changes.length > 0) {
+                    await catatLogAktivitas(`Koreksi Data JO <strong>${jobOrder}</strong>.`, changes);
+                } else {
+                    await catatLogAktivitas(`Koreksi Data JO <strong>${jobOrder}</strong> (Tidak ada nilai yang diubah).`);
+                }
+                
+                tutupModalEdit();
+            } catch (error) { alert("Gagal menyimpan."); }
+        }
+
+        async function hapusBaris(docId) {
+            let item = database.find(i => i.docId === docId);
+            if(!item) return;
+            if (confirm(`Konfirmasi: Hapus Job Order "${item.jobOrder}"?`)) {
+                try {
+                    lastDeletedItem = { ...item };
+                    const { doc, deleteDoc } = window.fbModules;
+                    await deleteDoc(doc(window.db, "production_data_v2", docId));
+                    logDisembunyikan = false;
+                    await catatLogAktivitas(`Menghapus JO: <strong>${item.jobOrder}</strong>.`);
+                    tampilkanToastUndo(item.jobOrder);
+                } catch (error) { alert("Gagal menghapus."); }
+            }
+        }
+
+        function tampilkanToastUndo(joName) {
+            let toast = document.getElementById('undoToast');
+            document.getElementById('undoMsg').innerHTML = `JO <strong>${joName}</strong> dihapus.`;
+            toast.classList.add('show');
+            if (undoTimer) clearTimeout(undoTimer);
+            undoTimer = setTimeout(() => { toast.classList.remove('show'); lastDeletedItem = null; }, 8000);
+        }
+
+        async function jalankanUndo() {
+            if (!lastDeletedItem) return;
+            let itemToRestore = lastDeletedItem;
+            let docIdToRestore = itemToRestore.docId;
+            delete itemToRestore.docId;
+            try {
+                const { doc, setDoc } = window.fbModules;
+                await setDoc(doc(window.db, "production_data_v2", docIdToRestore), itemToRestore);
+                logDisembunyikan = false;
+                await catatLogAktivitas(`UNDO Hapus JO: <strong>${itemToRestore.jobOrder}</strong>.`);
+                document.getElementById('undoToast').classList.remove('show');
+                if (undoTimer) clearTimeout(undoTimer);
+                lastDeletedItem = null;
+                alert("Data berhasil dipulihkan!");
+            } catch (error) { alert("Gagal memulihkan."); }
+        }
+
+        function renderRingkasanHarian() {
+            let tbody = document.getElementById('tabelRingkasan').getElementsByTagName('tbody')[0];
+            tbody.innerHTML = '';
+
+            let summaryMap = {};
+            database.forEach(item => {
+                let tgl = item.tanggal || 'Tanpa Tanggal';
+                if (!summaryMap[tgl]) {
+                    summaryMap[tgl] = { total: 0, closed: 0, open: 0 };
+                }
+                summaryMap[tgl].total++;
+                if (item.sisa <= 0) {
+                    summaryMap[tgl].closed++;
+                } else {
+                    summaryMap[tgl].open++;
+                }
+            });
+
+            let now = new Date();
+            let todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+
+            let sortedDates = Object.keys(summaryMap)
+                .filter(tgl => tgl >= todayStr || summaryMap[tgl].open > 0)
+                .sort((a, b) => new Date(a) - new Date(b))
+                .slice(0, 7);
+
+            if (sortedDates.length === 0) {
+                let row = tbody.insertRow();
+                row.innerHTML = `<td colspan="5" style="text-align: center; color: #718093; font-style: italic;">Tidak ada jadwal pengiriman terdekat atau belum selesai.</td>`;
+                return;
+            }
+
+            sortedDates.forEach(tgl => {
+                let dataTgl = summaryMap[tgl];
+                let row = tbody.insertRow();
+                
+                row.style.cursor = 'pointer';
+                row.title = "Klik untuk melihat rincian Job Order di tanggal ini";
+                row.onclick = () => bukaDetailTanggal(tgl);
+
+                let rincianTeks = "";
+                if (dataTgl.open === 0) {
+                    rincianTeks = `<span style="color: var(--success); font-weight: bold;">Status semua sudah closed (${dataTgl.closed} pengiriman).</span>`;
+                } else {
+                    rincianTeks = `Status <span style="color: var(--success); font-weight: bold;">${dataTgl.closed} pengiriman closed</span>. <span style="color: var(--danger); font-weight: bold;">${dataTgl.open} open</span>.`;
+                }
+
+                row.innerHTML = `
+                    <td><strong>${formatTanggalID(tgl)}</strong></td>
+                    <td>${dataTgl.total.toLocaleString('en-US')} pengiriman</td>
+                    <td><span class="status-close">${dataTgl.closed} Closed</span></td>
+                    <td><span class="${dataTgl.open > 0 ? 'status-open' : ''}">${dataTgl.open} Open</span></td>
+                    <td>${rincianTeks}</td>
+                `;
+            });
+        }
+
+        function bukaDetailTanggal(tglStr) {
+            document.getElementById('judulDetailTanggal').innerText = formatHariDanTanggal(tglStr);
+            let tbody = document.getElementById('bodyDetailTanggal');
+            tbody.innerHTML = '';
+
+            let dataTanggal = database.filter(item => item.tanggal === tglStr);
+            
+            dataTanggal.sort((a, b) => b.sisa - a.sisa); 
+
+            dataTanggal.forEach(item => {
+                let isClosed = item.sisa <= 0;
+                let statusInfo = isClosed 
+                    ? '<span class="status-close" style="font-size:10px;">✓ CLOSED</span>' 
+                    : '<span class="status-open" style="font-size:10px;">⚠️ OPEN</span>';
+                let sisaClass = !isClosed ? 'sisa-open' : '';
+
+                let tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${item.jobOrder}</strong></td>
+                    <td>${item.kodeItem}</td>
+                    <td>${item.produk}</td>
+                    <td>${item.order.toLocaleString('en-US')}</td>
+                    <td style="color:var(--success); font-weight:bold;">${item.hasil.toLocaleString('en-US')}</td>
+                    <td class="${sisaClass}">${item.sisa.toLocaleString('en-US')}</td>
+                    <td>${statusInfo}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('detailTanggalModal').style.display = 'flex';
+        }
+
+        function tutupDetailTanggal() {
+            document.getElementById('detailTanggalModal').style.display = 'none';
+        }
+
+        function renderTabel() {
+            let tbody = document.getElementById('tabelData').getElementsByTagName('tbody')[0];
+            let mobileContainer = document.getElementById('mobileCardContainer');
+            tbody.innerHTML = ''; 
+            mobileContainer.innerHTML = '';
+
+            let keyword = document.getElementById('searchInput').value.toLowerCase();
+            
+            let filteredData = database.filter(item => {
+                let poVal = item.poNum || '';
+                return (item.jobOrder && item.jobOrder.toLowerCase().includes(keyword)) ||
+                       (poVal && poVal.toLowerCase().includes(keyword)) ||
+                       (item.kodeItem && item.kodeItem.toLowerCase().includes(keyword)) ||
+                       (item.produk && item.produk.toLowerCase().includes(keyword));
+            });
+
+            let groupedData = {};
+            filteredData.forEach(item => {
+                if (!groupedData[item.tanggal]) {
+                    groupedData[item.tanggal] = [];
+                }
+                groupedData[item.tanggal].push(item);
+            });
+
+            let sortedDates = Object.keys(groupedData).sort((a, b) => {
+                let dateA = new Date(a);
+                let dateB = new Date(b);
+                return sortTerbaru ? dateB - dateA : dateA - dateB; 
+            });
+
+            sortedDates.forEach(tgl => {
+                let itemsForDate = groupedData[tgl];
+                let teksTanggal = formatHariDanTanggal(tgl); 
+                
+                let headerRow = tbody.insertRow();
+                headerRow.style.backgroundColor = "#eef2f7"; 
+                headerRow.innerHTML = `
+                    <td colspan="11" style="font-weight: bold; color: var(--primary); font-size: 13px; padding: 12px 10px; border-bottom: 2px solid #dcdde1;">
+                        📅 ${teksTanggal} 
+                        <span style="background: var(--primary); color: white; padding: 3px 8px; border-radius: 12px; font-size: 11px; margin-left: 10px;">
+                            ${itemsForDate.length} Pengiriman
+                        </span>
+                    </td>
+                `;
+
+                let mobileHeader = document.createElement('div');
+                mobileHeader.style.backgroundColor = "#eef2f7";
+                mobileHeader.style.padding = "10px 15px";
+                mobileHeader.style.borderRadius = "8px";
+                mobileHeader.style.fontWeight = "bold";
+                mobileHeader.style.color = "var(--primary)";
+                mobileHeader.style.marginTop = "15px"; 
+                mobileHeader.style.marginBottom = "5px";
+                mobileHeader.style.display = "flex";
+                mobileHeader.style.justifyContent = "space-between";
+                mobileHeader.style.alignItems = "center";
+                mobileHeader.style.borderLeft = "4px solid var(--primary)";
+                mobileHeader.innerHTML = `
+                    <span style="font-size: 13px;">📅 ${teksTanggal}</span>
+                    <span style="background: var(--primary); color: white; padding: 3px 8px; border-radius: 12px; font-size: 11px;">${itemsForDate.length} Data</span>
+                `;
+                mobileContainer.appendChild(mobileHeader);
+
+                itemsForDate.forEach(item => {
+                    let isClosed = item.sisa <= 0;
+                    let statusInfo = isClosed 
+                        ? '<span class="status-close">✓ CLOSED</span>' 
+                        : '<span class="status-open">⚠️ OPEN</span>';
+                    
+                    let sisaClass = item.sisa > 0 ? 'sisa-open' : '';
+                    let displayPo = item.poNum || '-';
+                    
+                    let actionBtn = isClosed ? `
+                        <button class="btn-edit" onclick="bukaModalEdit('${item.docId}')">Edit</button>
+                        <button class="btn-delete" onclick="hapusBaris('${item.docId}')">Hapus</button>
+                    ` : `
+                        <button class="btn-update" onclick="tambahHasil('${item.docId}')">Update</button>
+                        <button class="btn-edit" onclick="bukaModalEdit('${item.docId}')">Edit</button>
+                    `;
+
+                    let row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td style="color: #95a5a6;">${formatTanggalID(item.tanggal)}</td>
+                        <td>${item.jobOrder}</td>
+                        <td>${displayPo}</td>
+                        <td>${item.kodeItem}</td>
+                        <td><strong>${item.produk}</strong></td>
+                        <td>${item.order.toLocaleString('en-US')}</td>
+                        <td>${item.hasil.toLocaleString('en-US')}</td>
+                        <td class="${sisaClass}">${item.sisa.toLocaleString('en-US')}</td>
+                        <td><small>${item.ket || '-'}</small></td>
+                        <td>${statusInfo}</td>
+                        <td>${actionBtn}</td>
+                    `;
+
+                    let cardDiv = document.createElement('div');
+                    cardDiv.className = `record-card ${isClosed ? 'closed' : 'open'}`;
+                    cardDiv.innerHTML = `
+                        <div class="card-header">
+                            <span class="card-title">JO: <strong>${item.jobOrder}</strong></span>
+                            <span>${statusInfo}</span>
+                        </div>
+                        <div style="font-size: 13px; font-weight: bold; color: var(--text-main);">
+                            ${item.produk} <span style="font-size: 11px; color:#666; font-weight:normal;">(${item.kodeItem})</span>
+                        </div>
+                        <div style="font-size: 11px; color: #555;">PO#: <strong>${displayPo}</strong></div>
+                        <div class="card-body-grid">
+                            <div>Order: <strong>${item.order.toLocaleString('en-US')}</strong></div>
+                            <div>Hasil: <strong style="color:var(--success);">${item.hasil.toLocaleString('en-US')}</strong></div>
+                            <div>Sisa: <strong class="${sisaClass}">${item.sisa.toLocaleString('en-US')}</strong></div>
+                            <div>Ket: ${item.ket || '-'}</div>
+                        </div>
+                        <div class="card-footer-actions">
+                            ${actionBtn}
+                        </div>
+                    `;
+                    mobileContainer.appendChild(cardDiv);
+                });
+            });
+
+            renderPdfContainer(filteredData);
+            renderRingkasanHarian();
+        }
+
+        function renderPdfContainer(data) {
+            let pdfContainer = document.getElementById('pdfContainer');
+            pdfContainer.innerHTML = '';
+            let groupedByDate = {};
+            data.forEach(item => {
+                if (!groupedByDate[item.tanggal]) groupedByDate[item.tanggal] = [];
+                groupedByDate[item.tanggal].push(item);
+            });
+
+            let sortedDates = Object.keys(groupedByDate).sort((a, b) => sortTerbaru ? new Date(b) - new Date(a) : new Date(a) - new Date(b));
+
+            sortedDates.forEach(tgl => {
+                let sectionDiv = document.createElement('div');
+                sectionDiv.className = 'pdf-section';
+                let htmlContent = `<h3>Laporan Pengiriman: ${formatHariDanTanggal(tgl)}</h3>`;
+                htmlContent += `<table><thead><tr><th>Job Order</th><th>PO#</th><th>Kode Item</th><th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Keterangan</th><th>Status</th></tr></thead><tbody>`;
+                
+                groupedByDate[tgl].forEach(item => {
+                    let isClosed = item.sisa <= 0;
+                    let statusInfo = isClosed 
+                        ? '<span class="pdf-status-close">CLOSED</span>' 
+                        : '<span class="pdf-status-open">OPEN</span>';
+                    
+                    let sisaPdfClass = !isClosed ? 'pdf-sisa-open' : '';
+                    
+                    htmlContent += `<tr>
+                        <td>${item.jobOrder}</td>
+                        <td>${item.poNum || '-'}</td>
+                        <td>${item.kodeItem}</td>
+                        <td><strong>${item.produk}</strong></td>
+                        <td style="text-align: right;">${item.order.toLocaleString('en-US')}</td>
+                        <td style="text-align: right;">${item.hasil.toLocaleString('en-US')}</td>
+                        <td style="text-align: right;" class="${sisaPdfClass}">${item.sisa.toLocaleString('en-US')}</td>
+                        <td>${item.ket || '-'}</td>
+                        <td style="text-align: center;">${statusInfo}</td>
+                    </tr>`;
+                });
+                htmlContent += `</tbody></table>`;
+                sectionDiv.innerHTML = htmlContent;
+                pdfContainer.appendChild(sectionDiv);
+            });
+        }
+
+        function downloadBackup() {
+            if(database.length === 0) { alert("Tidak ada data."); return; }
+            let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(database));
+            let dl = document.createElement('a');
+            dl.setAttribute("href", dataStr);
+            dl.setAttribute("download", `Backup_Cloud_Assembly_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(dl);
+            dl.click();
+            dl.remove();
+        }
+
+        async function restoreBackup(event) {
+            let file = event.target.files[0];
+            if (!file) return;
+            let reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    let importedData = JSON.parse(e.target.result);
+                    if(Array.isArray(importedData) && confirm(`Migrasi ${importedData.length} data ke Cloud?`)) {
+                        const { collection, addDoc, serverTimestamp } = window.fbModules;
+                        let sukses = 0;
+                        for (let item of importedData) {
+                            let isDuplicate = database.some(dbItem => 
+                                dbItem.tanggal === item.tanggal &&
+                                dbItem.jobOrder === item.jobOrder && 
+                                dbItem.kodeItem === item.kodeItem &&
+                                dbItem.order === item.order &&
+                                dbItem.hasil === item.hasil
+                            );
+
+                            if (!isDuplicate) {
+                                await addDoc(collection(window.db, "production_data_v2"), {
+                                    tanggal: item.tanggal, jobOrder: item.jobOrder, poNum: item.poNum || item.po || '-',
+                                    kodeItem: item.kodeItem, produk: item.produk, order: item.order, hasil: item.hasil,
+                                    sisa: item.sisa, ket: item.ket || '', createdAt: serverTimestamp()
+                                });
+                                sukses++;
+                            }
+                        }
+                        logDisembunyikan = false;
+                        await catatLogAktivitas(`Migrasi Backup Selesai — <strong>${sukses} data baru</strong> diunggah.`);
+                        alert(`Migrasi selesai! ${sukses} data baru (termasuk data split) berhasil ditambahkan.`);
+                    }
+                } catch (err) { alert("Format file salah."); }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        async function hapusSemuaData() {
+            let passInput = prompt("MASUKKAN KATA SANDI UNTUK MENGHAPUS SEMUA DATA:");
+            if (passInput === PASS_ADMIN && confirm("Yakin ingin menghapus SELURUH database?")) {
+                try {
+                    const { doc, deleteDoc } = window.fbModules;
+                    for (let item of database) await deleteDoc(doc(window.db, "production_data_v2", item.docId));
+                    logDisembunyikan = false;
+                    await catatLogAktivitas("Mengosongkan seluruh database pengiriman.");
+                    alert("Database berhasil dikosongkan.");
+                } catch (error) { alert("Gagal menghapus."); }
+            } else if (passInput !== null) { alert("Kata sandi salah!"); }
+        }
+
+        function cetakPDF() { window.print(); }
+    </script>
+</body>
+</html>
