@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
@@ -56,7 +56,7 @@
             overflow-x: hidden;
         }
 
-        /* --- DESAIN LOGIN SCREEN BARU --- */
+        /* --- DESAIN LOGIN SCREEN --- */
         #welcomeScreen {
             position: fixed;
             top: 0;
@@ -130,7 +130,6 @@
         }
         .btn-continue:active { transform: scale(0.98); }
         .btn-continue:hover { background: var(--success-hover); }
-        /* ---------------------------------- */
 
         .kpi-grid {
             display: grid;
@@ -338,7 +337,7 @@
 
     <div id="undoToast">
         <span id="undoMsg">Data berhasil dihapus.</span>
-        <button class="btn-undo-action" onclick="jalankanUndo()">↩️ UNDO</button>
+        <button class="btn-undo-action" onclick="jalankanUndo()">↩ UNDO</button>
     </div>
 
     <!-- TAMPILAN LOGIN SCREEN -->
@@ -349,7 +348,7 @@
         <div class="login-container">
             <div style="font-size: 13px; color: #a4b0be; margin-bottom: 5px; font-weight: bold;">Silakan login untuk mengakses database:</div>
             
-            <input type="text" id="loginUsername" class="login-input" placeholder="Username (cyntia_r / bayu_a)" autocomplete="off">
+            <input type="text" id="loginUsername" class="login-input" placeholder="Username" autocomplete="off">
             <input type="password" id="loginPassword" class="login-input" placeholder="Password">
             
             <button class="btn-continue" onclick="prosesLogin()" style="width: 100%; margin-top: 5px;">
@@ -369,14 +368,14 @@
 
         <div class="log-box">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: bold; color: var(--primary);">⏱️ 10 Riwayat Aktivitas Terakhir (Cloud Real-Time):</span>
+                <span style="font-weight: bold; color: var(--primary);">⏱️ 30 Riwayat Aktivitas Terakhir (Cloud Real-Time):</span>
                 <div>
                     <span id="labelAdmin" style="font-size: 11px; background: #dfe6e9; color: #2d3436; padding: 5px 10px; border-radius: 12px; margin-right: 10px; font-weight: bold;">👤 Admin: -</span>
                     <button class="btn-clear-log" onclick="prosesLogout()" style="background: #e17055; margin-right: 5px;">🚪 Keluar</button>
                     <button class="btn-clear-log" onclick="hapusLogAktivitas()">🔒 Hapus Log</button>
                 </div>
             </div>
-            <ul id="listActivityLog" style="margin: 0; padding-left: 18px; font-size: 12px; max-height: 140px; overflow-y: auto;">
+            <ul id="listActivityLog" style="margin: 0; padding-left: 18px; font-size: 12px; max-height: 180px; overflow-y: auto;">
                 <li>Memuat data riwayat dari cloud...</li>
             </ul>
         </div>
@@ -620,6 +619,7 @@
         
         // VARIABEL GLOBAL IDENTITAS LOGIN
         let currentUser = ""; 
+        let currentRole = "";
 
         let lastDeletedItem = null;
         let undoTimer = null;
@@ -632,13 +632,11 @@
         });
 
         window.addEventListener('keydown', function(event) {
-            // Enter difokuskan untuk submit Login jika halaman Welcome masih terbuka
             let welcome = document.getElementById('welcomeScreen');
             if (event.key === 'Enter' && welcome && !welcome.classList.contains('slide-out')) {
                 prosesLogin();
             }
             
-            // Esc untuk menutup semua pop-up/modal
             if (event.key === 'Escape' || event.key === 'Esc') {
                 document.querySelectorAll('.modal').forEach(modal => {
                     if (modal.style.display === 'flex' || modal.style.display === 'block') {
@@ -648,7 +646,7 @@
             }
         });
 
-        // --- SISTEM VALIDASI LOGIN ADMIN ---
+        // --- SISTEM VALIDASI LOGIN ADMIN & DEVELOPER ---
         window.prosesLogin = function() {
             let userVal = document.getElementById('loginUsername').value.trim().toLowerCase();
             let passVal = document.getElementById('loginPassword').value.trim();
@@ -656,19 +654,27 @@
 
             if (userVal === 'cyntia_r' && passVal === 'admin') {
                 currentUser = "Cyntia R.";
+                currentRole = "admin";
             } else if (userVal === 'bayu_a' && passVal === 'admin') {
                 currentUser = "Bayu A.";
+                currentRole = "admin";
+            } else if ((userVal === 'angger' || userVal === 'developer') && passVal === 'admin') {
+                currentUser = "Angger Suprihadi";
+                currentRole = "developer";
             } else {
-                errBox.style.display = 'block'; // Tampilkan pesan error
+                errBox.style.display = 'block'; 
                 return;
             }
 
-            // Jika berhasil masuk
             errBox.style.display = 'none';
             document.getElementById('welcomeScreen').classList.add('slide-out');
-            document.getElementById('labelAdmin').innerHTML = `👤 Admin: <strong>${currentUser}</strong>`;
             
-            // Mencatat bahwa ada admin yang mengakses sistem
+            if (currentRole === 'developer') {
+                document.getElementById('labelAdmin').innerHTML = `🛠️ Developer: <strong>${currentUser}</strong>`;
+            } else {
+                document.getElementById('labelAdmin').innerHTML = `👤 Admin: <strong>${currentUser}</strong>`;
+            }
+            
             catatLogAktivitas(`Sistem diakses.`);
         }
 
@@ -678,7 +684,6 @@
                 if (currentUser) {
                     await catatLogAktivitas(`Keluar dari sistem.`);
                 }
-                // Me-refresh halaman secara paksa untuk mereset seluruh variabel memori dan mengembalikan layar login
                 window.location.reload();
             }
         }
@@ -704,7 +709,8 @@
                 }
             }, (error) => { console.error(error); });
 
-            const qLog = query(collection(window.db, "activity_logs"), orderBy("timestamp", "desc"), limit(10));
+            // KAPASITAS REAL-TIME DIPERBARUI MENJADI 30 RIWAYAT
+            const qLog = query(collection(window.db, "activity_logs"), orderBy("timestamp", "desc"), limit(30));
             onSnapshot(qLog, (snapshot) => {
                 let logContainer = document.getElementById('listActivityLog');
                 if (!logContainer) return;
@@ -772,13 +778,19 @@
 
         window.tutupLogDetail = function() { document.getElementById('logDetailModal').style.display = 'none'; }
 
-        // --- SISTEM PENCATATAN LOG YANG MENYEMATKAN NAMA ADMIN ---
+        // --- SISTEM PENCATATAN LOG MENYEMATKAN NAMA / PERAN ---
         async function catatLogAktivitas(pesanTeks, detailsArray = null) {
             try {
                 const { collection, addDoc, serverTimestamp } = window.fbModules;
                 
-                // Menempelkan identitas admin yang sedang aktif
-                let pesanFinal = currentUser ? `<span style="color:var(--info); font-weight:bold;">[${currentUser}]</span> ${pesanTeks}` : pesanTeks;
+                let prefixTag = "";
+                if (currentRole === 'developer') {
+                    prefixTag = `<span style="color:#e67e22; font-weight:bold;">[Dev: ${currentUser}]</span>`;
+                } else if (currentUser) {
+                    prefixTag = `<span style="color:var(--info); font-weight:bold;">[${currentUser}]</span>`;
+                }
+
+                let pesanFinal = prefixTag ? `${prefixTag} ${pesanTeks}` : pesanTeks;
 
                 let logData = { pesan: pesanFinal, timestamp: serverTimestamp() };
                 if (detailsArray) {
@@ -1322,12 +1334,14 @@
                     let sisaClass = item.sisa > 0 ? 'sisa-open' : '';
                     let displayPo = item.poNum || '-';
                     
+                    // TOMBOL HAPUS SEKARANG AKTIF BAIK PADA STATUS CLOSED MAUPUN OPEN
                     let actionBtn = isClosed ? `
                         <button class="btn-edit" onclick="bukaModalEdit('${item.docId}')">Edit</button>
                         <button class="btn-delete" onclick="hapusBaris('${item.docId}')">Hapus</button>
                     ` : `
                         <button class="btn-update" onclick="tambahHasil('${item.docId}')">Update</button>
                         <button class="btn-edit" onclick="bukaModalEdit('${item.docId}')">Edit</button>
+                        <button class="btn-delete" onclick="hapusBaris('${item.docId}')">Hapus</button>
                     `;
 
                     let row = tbody.insertRow();
