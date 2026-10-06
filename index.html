@@ -252,8 +252,10 @@
         .btn-delete { background: var(--danger); padding: 6px 10px; font-size: 11px; width: 100%; }
         .btn-clear { background: var(--danger); padding: 8px 12px; font-size: 12px; float: right; }
         
-        .sort-btn { background: var(--primary-hover); border: 1px solid #4a69bd; color: #fff; font-weight: bold; cursor: pointer; padding: 3px 8px; font-size: 11px; border-radius: 4px; margin-left: 6px; }
-        .search-box { width: 100%; padding: 10px 12px; border: 1px solid var(--primary); border-radius: 6px; font-size: 13px; margin-bottom: 15px; background-color: #fcfcfc; box-sizing: border-box; }
+        /* CSS Baru untuk Filter Group */
+        .filter-group { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; margin-bottom: 15px; }
+        .search-box { padding: 10px 12px; border: 1px solid var(--primary); border-radius: 6px; font-size: 13px; background-color: #fcfcfc; box-sizing: border-box; outline: none; }
+        .search-box:focus { border-color: var(--info); box-shadow: 0 0 0 2px rgba(41, 128, 185, 0.2); }
 
         .preview-container { border: 2px dashed var(--info); padding: 15px; border-radius: 8px; background: #f8fbff; margin-bottom: 20px; }
         .preview-table-wrapper { max-height: 220px; overflow-y: auto; margin-top: 10px; border: 1px solid var(--border-color); border-radius: 6px; }
@@ -513,17 +515,23 @@
             <button class="btn-clear" onclick="hapusSemuaData()">Hapus Semua Data</button>
         </div>
 
-        <div style="margin-top: 12px;">
-            <input type="text" id="searchInput" class="search-box" placeholder="🔍 Cari berdasarkan Nama Produk, Job Order, PO#, atau Kode Item..." oninput="renderTabel()">
+        <!-- PANEL FILTER & PENCARIAN TERBARU -->
+        <div class="filter-group">
+            <input type="text" id="searchInput" class="search-box" style="flex: 2;" placeholder="🔍 Cari Nama Produk, Job Order, PO#, atau Kode Item..." oninput="renderTabel()">
+            
+            <!-- DEFAULT SORT DISET KE PRODUK OPEN -> CLOSED -->
+            <select id="sortMode" class="search-box" style="flex: 1; cursor: pointer; font-weight: bold; color: var(--primary); background-color: #f1f2f6;" onchange="renderTabel()">
+                <option value="produk_open_closed" selected>🔠 Sort: Nama Produk (Open ➔ Closed)</option>
+                <option value="terdekat">📅 Urutan: Tanggal Terdekat</option>
+                <option value="terjauh">📅 Urutan: Tanggal Terjauh</option>
+                <option value="open_only">⚠️ Filter: Hanya Status OPEN</option>
+            </select>
         </div>
 
         <table id="tabelData" class="desktop-table">
             <thead>
                 <tr>
-                    <th>
-                        Pengiriman 
-                        <button class="sort-btn" onclick="toggleSort()" id="sortBtnText">⬆️ Terdekat</button>
-                    </th>
+                    <th>Tanggal Pengiriman</th>
                     <th>Job Order</th>
                     <th>PO#</th>
                     <th>Kode Item</th>
@@ -613,7 +621,6 @@
         document.getElementById('tanggal').valueAsDate = new Date();
 
         let database = [];
-        let sortTerbaru = false; 
         let logDisembunyikan = false;
         const PASS_ADMIN = "admin"; 
         
@@ -709,7 +716,7 @@
                 }
             }, (error) => { console.error(error); });
 
-            // KAPASITAS REAL-TIME DIPERBARUI MENJADI 30 RIWAYAT
+            // KAPASITAS REAL-TIME 30 RIWAYAT
             const qLog = query(collection(window.db, "activity_logs"), orderBy("timestamp", "desc"), limit(30));
             onSnapshot(qLog, (snapshot) => {
                 let logContainer = document.getElementById('listActivityLog');
@@ -1036,12 +1043,6 @@
             }
         }
 
-        function toggleSort() {
-            sortTerbaru = !sortTerbaru;
-            document.getElementById('sortBtnText').innerHTML = sortTerbaru ? "⬇️ Terjauh" : "⬆️ Terdekat";
-            renderTabel();
-        }
-
         async function tambahHasil(docId) {
             let item = database.find(i => i.docId === docId);
             if(!item) return;
@@ -1169,115 +1170,31 @@
             } catch (error) { alert("Gagal memulihkan."); }
         }
 
-        function renderRingkasanHarian() {
-            let tbody = document.getElementById('tabelRingkasan').getElementsByTagName('tbody')[0];
-            tbody.innerHTML = '';
-
-            let summaryMap = {};
-            database.forEach(item => {
-                let tgl = item.tanggal || 'Tanpa Tanggal';
-                if (!summaryMap[tgl]) {
-                    summaryMap[tgl] = { total: 0, closed: 0, open: 0 };
-                }
-                summaryMap[tgl].total++;
-                if (item.sisa <= 0) {
-                    summaryMap[tgl].closed++;
-                } else {
-                    summaryMap[tgl].open++;
-                }
-            });
-
-            let now = new Date();
-            let todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-
-            let sortedDates = Object.keys(summaryMap)
-                .filter(tgl => tgl >= todayStr || summaryMap[tgl].open > 0)
-                .sort((a, b) => new Date(a) - new Date(b))
-                .slice(0, 7);
-
-            if (sortedDates.length === 0) {
-                let row = tbody.insertRow();
-                row.innerHTML = `<td colspan="5" style="text-align: center; color: #718093; font-style: italic;">Tidak ada jadwal pengiriman terdekat atau belum selesai.</td>`;
-                return;
-            }
-
-            sortedDates.forEach(tgl => {
-                let dataTgl = summaryMap[tgl];
-                let row = tbody.insertRow();
-                
-                row.style.cursor = 'pointer';
-                row.title = "Klik untuk melihat rincian Job Order di tanggal ini";
-                row.onclick = () => bukaDetailTanggal(tgl);
-
-                let rincianTeks = "";
-                if (dataTgl.open === 0) {
-                    rincianTeks = `<span style="color: var(--success); font-weight: bold;">Status semua sudah closed (${dataTgl.closed} pengiriman).</span>`;
-                } else {
-                    rincianTeks = `Status <span style="color: var(--success); font-weight: bold;">${dataTgl.closed} pengiriman closed</span>. <span style="color: var(--danger); font-weight: bold;">${dataTgl.open} open</span>.`;
-                }
-
-                row.innerHTML = `
-                    <td><strong>${formatTanggalID(tgl)}</strong></td>
-                    <td>${dataTgl.total.toLocaleString('en-US')} pengiriman</td>
-                    <td><span class="status-close">${dataTgl.closed} Closed</span></td>
-                    <td><span class="${dataTgl.open > 0 ? 'status-open' : ''}">${dataTgl.open} Open</span></td>
-                    <td>${rincianTeks}</td>
-                `;
-            });
-        }
-
-        function bukaDetailTanggal(tglStr) {
-            document.getElementById('judulDetailTanggal').innerText = formatHariDanTanggal(tglStr);
-            let tbody = document.getElementById('bodyDetailTanggal');
-            tbody.innerHTML = '';
-
-            let dataTanggal = database.filter(item => item.tanggal === tglStr);
-            
-            dataTanggal.sort((a, b) => b.sisa - a.sisa); 
-
-            dataTanggal.forEach(item => {
-                let isClosed = item.sisa <= 0;
-                let statusInfo = isClosed 
-                    ? '<span class="status-close" style="font-size:10px;">✓ CLOSED</span>' 
-                    : '<span class="status-open" style="font-size:10px;">⚠️ OPEN</span>';
-                let sisaClass = !isClosed ? 'sisa-open' : '';
-
-                let tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><strong>${item.jobOrder}</strong></td>
-                    <td>${item.kodeItem}</td>
-                    <td>${item.produk}</td>
-                    <td>${item.order.toLocaleString('en-US')}</td>
-                    <td style="color:var(--success); font-weight:bold;">${item.hasil.toLocaleString('en-US')}</td>
-                    <td class="${sisaClass}">${item.sisa.toLocaleString('en-US')}</td>
-                    <td>${statusInfo}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            document.getElementById('detailTanggalModal').style.display = 'flex';
-        }
-
-        function tutupDetailTanggal() {
-            document.getElementById('detailTanggalModal').style.display = 'none';
-        }
-
-        function renderTabel() {
+        // --- SISTEM RENDER TABEL & FILTER/SORTING BARU ---
+        window.renderTabel = function() {
             let tbody = document.getElementById('tabelData').getElementsByTagName('tbody')[0];
             let mobileContainer = document.getElementById('mobileCardContainer');
             tbody.innerHTML = ''; 
             mobileContainer.innerHTML = '';
 
             let keyword = document.getElementById('searchInput').value.toLowerCase();
+            let sortMode = document.getElementById('sortMode').value;
             
+            // 1. TAHAP FILTERING PENCARIAN & STATUS OPEN
             let filteredData = database.filter(item => {
                 let poVal = item.poNum || '';
-                return (item.jobOrder && item.jobOrder.toLowerCase().includes(keyword)) ||
+                let matchesSearch = (item.jobOrder && item.jobOrder.toLowerCase().includes(keyword)) ||
                        (poVal && poVal.toLowerCase().includes(keyword)) ||
                        (item.kodeItem && item.kodeItem.toLowerCase().includes(keyword)) ||
                        (item.produk && item.produk.toLowerCase().includes(keyword));
+                
+                if (sortMode === 'open_only') {
+                    return matchesSearch && item.sisa > 0; 
+                }
+                return matchesSearch;
             });
 
+            // 2. TAHAP GROUPING TANGGAL
             let groupedData = {};
             filteredData.forEach(item => {
                 if (!groupedData[item.tanggal]) {
@@ -1289,13 +1206,35 @@
             let sortedDates = Object.keys(groupedData).sort((a, b) => {
                 let dateA = new Date(a);
                 let dateB = new Date(b);
-                return sortTerbaru ? dateB - dateA : dateA - dateB; 
+                return (sortMode === 'terjauh') ? dateB - dateA : dateA - dateB; 
             });
+
+            let pdfContainer = document.getElementById('pdfContainer');
+            pdfContainer.innerHTML = '';
 
             sortedDates.forEach(tgl => {
                 let itemsForDate = groupedData[tgl];
                 let teksTanggal = formatHariDanTanggal(tgl); 
                 
+                // 3. TAHAP SORTING BARIS DATA PER TANGGAL (NAMA PRODUK OPEN -> CLOSED)
+                if (sortMode === 'produk_open_closed') {
+                    itemsForDate.sort((a, b) => {
+                        let statusA = a.sisa > 0 ? 0 : 1; // 0 = Open, 1 = Closed
+                        let statusB = b.sisa > 0 ? 0 : 1;
+                        
+                        if (statusA !== statusB) {
+                            return statusA - statusB; // Status Open di atas
+                        }
+                        
+                        let nameA = (a.produk || "").toUpperCase();
+                        let nameB = (b.produk || "").toUpperCase();
+                        if (nameA < nameB) return -1;
+                        if (nameA > nameB) return 1;
+                        return 0;
+                    });
+                }
+
+                // HEADER TABEL PER TANGGAL
                 let headerRow = tbody.insertRow();
                 headerRow.style.backgroundColor = "#eef2f7"; 
                 headerRow.innerHTML = `
@@ -1307,6 +1246,7 @@
                     </td>
                 `;
 
+                // HEADER MOBILE PER TANGGAL
                 let mobileHeader = document.createElement('div');
                 mobileHeader.style.backgroundColor = "#eef2f7";
                 mobileHeader.style.padding = "10px 15px";
@@ -1325,6 +1265,12 @@
                 `;
                 mobileContainer.appendChild(mobileHeader);
 
+                // PENYIAPAN KONTEN UNTUK PDF SEKALIGUS (Efisiensi Loop)
+                let pdfSectionDiv = document.createElement('div');
+                pdfSectionDiv.className = 'pdf-section';
+                let pdfHtmlContent = `<h3>Laporan Pengiriman: ${formatHariDanTanggal(tgl)}</h3>`;
+                pdfHtmlContent += `<table><thead><tr><th>Job Order</th><th>PO#</th><th>Kode Item</th><th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Keterangan</th><th>Status</th></tr></thead><tbody>`;
+
                 itemsForDate.forEach(item => {
                     let isClosed = item.sisa <= 0;
                     let statusInfo = isClosed 
@@ -1334,7 +1280,6 @@
                     let sisaClass = item.sisa > 0 ? 'sisa-open' : '';
                     let displayPo = item.poNum || '-';
                     
-                    // TOMBOL HAPUS SEKARANG AKTIF BAIK PADA STATUS CLOSED MAUPUN OPEN
                     let actionBtn = isClosed ? `
                         <button class="btn-edit" onclick="bukaModalEdit('${item.docId}')">Edit</button>
                         <button class="btn-delete" onclick="hapusBaris('${item.docId}')">Hapus</button>
@@ -1344,6 +1289,7 @@
                         <button class="btn-delete" onclick="hapusBaris('${item.docId}')">Hapus</button>
                     `;
 
+                    // RENDER BARIS TABEL DESKTOP
                     let row = tbody.insertRow();
                     row.innerHTML = `
                         <td style="color: #95a5a6;">${formatTanggalID(item.tanggal)}</td>
@@ -1359,6 +1305,7 @@
                         <td>${actionBtn}</td>
                     `;
 
+                    // RENDER BARIS KARTU MOBILE
                     let cardDiv = document.createElement('div');
                     cardDiv.className = `record-card ${isClosed ? 'closed' : 'open'}`;
                     cardDiv.innerHTML = `
@@ -1381,39 +1328,11 @@
                         </div>
                     `;
                     mobileContainer.appendChild(cardDiv);
-                });
-            });
 
-            renderPdfContainer(filteredData);
-            renderRingkasanHarian();
-        }
-
-        function renderPdfContainer(data) {
-            let pdfContainer = document.getElementById('pdfContainer');
-            pdfContainer.innerHTML = '';
-            let groupedByDate = {};
-            data.forEach(item => {
-                if (!groupedByDate[item.tanggal]) groupedByDate[item.tanggal] = [];
-                groupedByDate[item.tanggal].push(item);
-            });
-
-            let sortedDates = Object.keys(groupedByDate).sort((a, b) => sortTerbaru ? new Date(b) - new Date(a) : new Date(a) - new Date(b));
-
-            sortedDates.forEach(tgl => {
-                let sectionDiv = document.createElement('div');
-                sectionDiv.className = 'pdf-section';
-                let htmlContent = `<h3>Laporan Pengiriman: ${formatHariDanTanggal(tgl)}</h3>`;
-                htmlContent += `<table><thead><tr><th>Job Order</th><th>PO#</th><th>Kode Item</th><th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Keterangan</th><th>Status</th></tr></thead><tbody>`;
-                
-                groupedByDate[tgl].forEach(item => {
-                    let isClosed = item.sisa <= 0;
-                    let statusInfo = isClosed 
-                        ? '<span class="pdf-status-close">CLOSED</span>' 
-                        : '<span class="pdf-status-open">OPEN</span>';
-                    
+                    // RENDER BARIS PDF
+                    let pdfStatusInfo = isClosed ? '<span class="pdf-status-close">CLOSED</span>' : '<span class="pdf-status-open">OPEN</span>';
                     let sisaPdfClass = !isClosed ? 'pdf-sisa-open' : '';
-                    
-                    htmlContent += `<tr>
+                    pdfHtmlContent += `<tr>
                         <td>${item.jobOrder}</td>
                         <td>${item.poNum || '-'}</td>
                         <td>${item.kodeItem}</td>
@@ -1422,13 +1341,17 @@
                         <td style="text-align: right;">${item.hasil.toLocaleString('en-US')}</td>
                         <td style="text-align: right;" class="${sisaPdfClass}">${item.sisa.toLocaleString('en-US')}</td>
                         <td>${item.ket || '-'}</td>
-                        <td style="text-align: center;">${statusInfo}</td>
+                        <td style="text-align: center;">${pdfStatusInfo}</td>
                     </tr>`;
                 });
-                htmlContent += `</tbody></table>`;
-                sectionDiv.innerHTML = htmlContent;
-                pdfContainer.appendChild(sectionDiv);
+
+                // SELESAIKAN PDF UNTUK TANGGAL INI
+                pdfHtmlContent += `</tbody></table>`;
+                pdfSectionDiv.innerHTML = pdfHtmlContent;
+                pdfContainer.appendChild(pdfSectionDiv);
             });
+
+            renderRingkasanHarian();
         }
 
         function downloadBackup() {
