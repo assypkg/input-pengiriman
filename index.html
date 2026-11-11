@@ -649,35 +649,66 @@
             }
         });
 
-        window.prosesLogin = function() {
-            let userVal = document.getElementById('loginUsername').value.trim().toLowerCase();
-            let passVal = document.getElementById('loginPassword').value.trim();
-            let errBox = document.getElementById('loginError');
+        // Supabase Admin authentication. Viewer app keeps its separate corporate token.
+        const SUPABASE_AUTH_URL = "https://wcsjjdzxnwhzqkqninky.supabase.co";
+        const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_UadEwYUBc9Whu3m7VKrF6g_lAjS_Y4U";
 
-            if (userVal === 'cyntia_r' && passVal === 'admin') {
-                currentUser = "Cyntia R.";
-                currentRole = "admin";
-            } else if (userVal === 'bayu_a' && passVal === 'admin') {
-                currentUser = "Bayu A.";
-                currentRole = "admin";
-            } else if ((userVal === 'angger' || userVal === 'developer') && passVal === 'admin') {
-                currentUser = "Angger Suprihadi";
-                currentRole = "developer";
-            } else {
-                errBox.style.display = 'block'; 
+        window.prosesLogin = async function() {
+            const userVal = document.getElementById('loginUsername').value.trim().toLowerCase();
+            const passVal = document.getElementById('loginPassword').value;
+            const errBox = document.getElementById('loginError');
+            const loginButton = document.querySelector('#welcomeScreen .btn-continue');
+
+            if (!userVal || !passVal) {
+                errBox.innerText = "Username dan password wajib diisi.";
+                errBox.style.display = 'block';
                 return;
             }
 
-            errBox.style.display = 'none';
-            document.getElementById('welcomeScreen').classList.add('slide-out');
-            
-            if (currentRole === 'developer') {
-                document.getElementById('labelAdmin').innerHTML = `🛠️ Developer: <strong>${currentUser}</strong>`;
-            } else {
-                document.getElementById('labelAdmin').innerHTML = `👤 Admin: <strong>${currentUser}</strong>`;
+            if (loginButton) {
+                loginButton.disabled = true;
+                loginButton.style.opacity = "0.65";
             }
-            catatLogAktivitas(`Sistem diakses.`);
-        }
+            errBox.style.display = 'none';
+
+            try {
+                const response = await fetch(`${SUPABASE_AUTH_URL}/functions/v1/username-login`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "apikey": SUPABASE_PUBLISHABLE_KEY
+                    },
+                    body: JSON.stringify({ username: userVal, password: passVal })
+                });
+                const result = await response.json();
+                if (!response.ok || !result.profile || !result.access_token) {
+                    throw new Error(result.error || "Username atau password salah.");
+                }
+
+                currentUser = result.profile.full_name;
+                currentRole = result.profile.role === "superuser" ? "developer" : "admin";
+                sessionStorage.setItem("assembly_admin_access_token", result.access_token);
+                sessionStorage.setItem("assembly_admin_refresh_token", result.refresh_token || "");
+                sessionStorage.setItem("assembly_admin_role", result.profile.role);
+                sessionStorage.setItem("assembly_admin_username", result.profile.username);
+
+                document.getElementById('welcomeScreen').classList.add('slide-out');
+                if (currentRole === 'developer') {
+                    document.getElementById('labelAdmin').innerHTML = `🛠️ Superuser: <strong>${currentUser}</strong>`;
+                } else {
+                    document.getElementById('labelAdmin').innerHTML = `👤 Admin: <strong>${currentUser}</strong>`;
+                }
+                catatLogAktivitas("Sistem diakses.");
+            } catch (error) {
+                errBox.innerText = error.message || "Login gagal. Periksa koneksi dan akun.";
+                errBox.style.display = 'block';
+            } finally {
+                if (loginButton) {
+                    loginButton.disabled = false;
+                    loginButton.style.opacity = "1";
+                }
+            }
+        };
 
         window.prosesLogout = async function() {
             if (confirm("Apakah Anda yakin ingin keluar dari sistem?")) {
