@@ -8,6 +8,7 @@
     <!-- Firebase SDK Modular CDN -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp, query, orderBy, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -22,11 +23,19 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const firebaseAuth = getAuth(app);
 
         window.db = db;
+        window.firebaseAuth = firebaseAuth;
         window.fbModules = { collection, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp, query, orderBy, limit, writeBatch };
-        
-        initRealtimeSync();
+        window.fbAuthModules = { signInWithCustomToken, signOut };
+        window.startFirebaseSession = async (customToken) => {
+            const credential = await signInWithCustomToken(firebaseAuth, customToken);
+            return credential.user;
+        };
+        window.endFirebaseSession = async () => {
+            await signOut(firebaseAuth);
+        };
     </script>
 
     <style>
@@ -685,6 +694,21 @@
                     throw new Error(result.error || "Username atau password salah.");
                 }
 
+                const firebaseResponse = await fetch(`${SUPABASE_AUTH_URL}/functions/v1/firebase-custom-token`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "apikey": SUPABASE_PUBLISHABLE_KEY,
+                        "Authorization": `Bearer ${result.access_token}`
+                    }
+                });
+                const firebaseResult = await firebaseResponse.json();
+                if (!firebaseResponse.ok || !firebaseResult.firebase_custom_token ||
+                    firebaseResult.firebase_project_id !== "summarypengiriman") {
+                    throw new Error(firebaseResult.error || "Sesi Firebase gagal dibuat.");
+                }
+
+                await window.startFirebaseSession(firebaseResult.firebase_custom_token);
                 currentUser = result.profile.full_name;
                 currentRole = result.profile.role === "superuser" ? "developer" : "admin";
                 sessionStorage.setItem("assembly_admin_access_token", result.access_token);
@@ -693,6 +717,10 @@
                 sessionStorage.setItem("assembly_admin_username", result.profile.username);
 
                 document.getElementById('welcomeScreen').classList.add('slide-out');
+                if (!window.firebaseRealtimeStarted) {
+                    initRealtimeSync();
+                    window.firebaseRealtimeStarted = true;
+                }
                 if (currentRole === 'developer') {
                     document.getElementById('labelAdmin').innerHTML = `🛠️ Superuser: <strong>${currentUser}</strong>`;
                 } else {
@@ -714,6 +742,11 @@
             if (confirm("Apakah Anda yakin ingin keluar dari sistem?")) {
                 if (currentUser) {
                     await catatLogAktivitas(`Keluar dari sistem.`);
+                }
+                try {
+                    if (window.endFirebaseSession) await window.endFirebaseSession();
+                } catch (error) {
+                    console.error("Firebase logout failed:", error);
                 }
                 sessionStorage.removeItem("assembly_admin_access_token");
                 sessionStorage.removeItem("assembly_admin_refresh_token");
