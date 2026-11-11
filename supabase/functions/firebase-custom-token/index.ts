@@ -19,7 +19,7 @@ function base64url(input: Uint8Array | string): string {
 }
 
 function pemToDer(pem: string): ArrayBuffer {
-  const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g, "");
+  const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
   const binary = atob(clean);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -36,7 +36,7 @@ async function createFirebaseCustomToken(serviceAccount: any, uid: string, claim
     iat: now,
     exp: now + 3600,
     uid,
-    claims,
+    ...claims,
   }));
   const unsigned = `${header}.${payload}`;
   const key = await crypto.subtle.importKey(
