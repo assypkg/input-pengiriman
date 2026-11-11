@@ -208,8 +208,8 @@ Deno.serve(async (req: Request) => {
         registeredDevices: toFirestoreValue([]),
         schedule: toFirestoreValue(schedule),
       };
-      const response = await fetch(`${base}/access_tokens/${newId}`, {
-        method: "PATCH", headers, body: JSON.stringify({ fields }),
+      const response = await fetch(`${base}/access_tokens?documentId=${encodeURIComponent(newId)}`, {
+        method: "POST", headers, body: JSON.stringify({ fields }),
       });
       const payload = await response.json();
       if (!response.ok) {
