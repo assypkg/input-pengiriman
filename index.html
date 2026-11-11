@@ -794,9 +794,12 @@
                 }
                 let pesanFinal = prefixTag ? `${prefixTag} ${pesanTeks}` : pesanTeks;
                 let logData = { pesan: pesanFinal, timestamp: serverTimestamp() };
-                if (detailsArray) logData.details = detailsArray; 
+                if (detailsArray) logData.details = detailsArray;
                 await addDoc(collection(window.db, "activity_logs"), logData);
-            } catch (err) { console.e        async function hapusLogAktivitas() {
+            } catch (err) { console.error(err); }
+        }
+
+        async function hapusLogAktivitas() {
             let passInput = prompt("MASUKKAN KATA SANDI PENANGGUNG JAWAB:");
             if (passInput === PASS_ADMIN) {
                 if (confirm("⚠️ PERINGATAN: Yakin ingin MENGHAPUS PERMANEN seluruh riwayat log aktivitas dari server?")) {
@@ -837,8 +840,6 @@
                 }
             } else if (passInput !== null) {
                 alert("KATA SANDI SALAH!");
-            }
-        }
             }
         }
 
