@@ -15,10 +15,10 @@ function base64url(input: Uint8Array | string): string {
   const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 function pemToDer(pem: string): ArrayBuffer {
-  const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g, "");
+  const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
   const binary = atob(clean);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -103,7 +103,7 @@ function validSchedule(schedule: any): boolean {
   if (!schedule || typeof schedule !== "object" || typeof schedule.isScheduled !== "boolean") return false;
   if (!schedule.isScheduled) return true;
   const validPart = (part: any) =>
-    part && typeof part.time === "string" && /^([01]\\d|2[0-3]):[0-5]\\d$/.test(part.time) &&
+    part && typeof part.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(part.time) &&
     ["tiap_hari", "senin_jumat", "sekali", "khusus"].includes(part.type) &&
     Array.isArray(part.days) && part.days.every((day: any) => Number.isInteger(day) && day >= 0 && day <= 6);
   return validPart(schedule.start) && validPart(schedule.end) &&
