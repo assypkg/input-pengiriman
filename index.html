@@ -715,6 +715,10 @@
                 if (currentUser) {
                     await catatLogAktivitas(`Keluar dari sistem.`);
                 }
+                sessionStorage.removeItem("assembly_admin_access_token");
+                sessionStorage.removeItem("assembly_admin_refresh_token");
+                sessionStorage.removeItem("assembly_admin_role");
+                sessionStorage.removeItem("assembly_admin_username");
                 window.location.reload();
             }
         }
