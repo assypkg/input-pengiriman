@@ -204,7 +204,7 @@ Deno.serve(async (req: Request) => {
       }
       const docPath = document.name;
       const updateResponse = await fetch(
-        `https://firestore.googleapis.com/v1/${docPath}:commit`,
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${googleToken}`, "Content-Type": "application/json" },
