@@ -8,7 +8,7 @@
     <!-- Firebase SDK Modular CDN -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp, query, orderBy, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCi7Tr4DDGvWg-a8Fd_tybUS7bBq0hrvaY",
@@ -24,7 +24,7 @@
         const db = getFirestore(app);
 
         window.db = db;
-        window.fbModules = { collection, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp, query, orderBy, limit };
+        window.fbModules = { collection, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp, query, orderBy, limit, writeBatch };
         
         initRealtimeSync();
     </script>
@@ -796,42 +796,49 @@
                 let logData = { pesan: pesanFinal, timestamp: serverTimestamp() };
                 if (detailsArray) logData.details = detailsArray; 
                 await addDoc(collection(window.db, "activity_logs"), logData);
-            } catch (err) { console.error(err); }
-        }
-
-        async function hapusLogAktivitas() {
+            } catch (err) { console.e        async function hapusLogAktivitas() {
             let passInput = prompt("MASUKKAN KATA SANDI PENANGGUNG JAWAB:");
             if (passInput === PASS_ADMIN) {
                 if (confirm("⚠️ PERINGATAN: Yakin ingin MENGHAPUS PERMANEN seluruh riwayat log aktivitas dari server?")) {
+                    const btn = document.querySelector('.btn-clear-log');
+                    const originalLabel = btn ? btn.innerHTML : "";
                     try {
-                        const { collection, getDocs, deleteDoc, doc } = window.fbModules;
-                        let btn = document.querySelector('.btn-clear-log');
+                        const { collection, getDocs, query, limit, writeBatch } = window.fbModules;
                         if (btn) {
-                            btn.dataset.original = btn.innerHTML;
                             btn.innerHTML = "⏳ Menghapus...";
                             btn.disabled = true;
                         }
 
-                        const snapshot = await getDocs(collection(window.db, "activity_logs"));
-                        let deletePromises = [];
-                        snapshot.forEach((docSnap) => {
-                            deletePromises.push(deleteDoc(doc(window.db, "activity_logs", docSnap.id)));
-                        });
-                        
-                        await Promise.all(deletePromises);
-                        
+                        let totalTerhapus = 0;
+                        while (true) {
+                            const q = query(collection(window.db, "activity_logs"), limit(500));
+                            const snapshot = await getDocs(q);
+                            if (snapshot.empty) break;
+
+                            const batch = writeBatch(window.db);
+                            snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
+                            await batch.commit();
+
+                            totalTerhapus += snapshot.size;
+                            if (snapshot.size < 500) break;
+                        }
+
                         logDisembunyikan = false;
+                        alert(`Berhasil menghapus ${totalTerhapus.toLocaleString('id-ID')} riwayat aktivitas dari Cloud.`);
+                    } catch (error) {
+                        console.error("Gagal menghapus riwayat log:", error);
+                        alert("Gagal menghapus sebagian/seluruh riwayat log. Periksa koneksi dan izin Firestore, lalu coba lagi.");
+                    } finally {
                         if (btn) {
-                            btn.innerHTML = btn.dataset.original;
+                            btn.innerHTML = originalLabel;
                             btn.disabled = false;
                         }
-                        alert("Seluruh riwayat aktivitas berhasil dihapus permanen dari Cloud!");
-                    } catch (error) {
-                        alert("Gagal menghapus riwayat dari server.");
                     }
                 }
             } else if (passInput !== null) {
                 alert("KATA SANDI SALAH!");
+            }
+        }
             }
         }
 
