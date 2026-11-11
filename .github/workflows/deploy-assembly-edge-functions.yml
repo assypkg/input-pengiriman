@@ -24,12 +24,6 @@ jobs:
         with:
           version: latest
 
-      - name: Link Supabase project
-        run: supabase link --project-ref wcsjjdzxnwhzqkqninky
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-
       - name: Deploy username-login
         run: supabase functions deploy username-login --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt
         env:
