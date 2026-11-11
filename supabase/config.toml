@@ -1,0 +1,7 @@
+project_id = "wcsjjdzxnwhzqkqninky"
+
+[functions.username-login]
+verify_jwt = false
+
+[functions.provision-assembly-user]
+verify_jwt = false
