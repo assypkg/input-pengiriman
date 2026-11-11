@@ -6,6 +6,9 @@ verify_jwt = false
 [functions.provision-assembly-user]
 verify_jwt = false
 
+[functions.firebase-custom-token]
+verify_jwt = false
+
 [functions.validate-viewer-token]
 verify_jwt = false
 
