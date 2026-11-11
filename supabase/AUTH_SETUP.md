@@ -4,7 +4,7 @@ This branch contains the initial username/password authentication backend for th
 
 ## Files
 - `supabase/migrations/202611120001_assembly_users.sql`: user profile table and row-level security.
-- `supabase/functions/username-login/index.ts`: username/password login endpoint.
+- `supabase/functions/username-login/index.ts`: username/password login endpoint.\n- `supabase/functions/firebase-custom-token/index.ts`: verifies the Supabase session and issues a short-lived Firebase custom token with Assembly role claims.
 - `supabase/functions/provision-assembly-user/index.ts`: secure account provisioning endpoint.
 - `supabase/functions/validate-viewer-token/index.ts`: server-side validation of the existing corporate Viewer token, schedule, and device limit.
 - `supabase/functions/viewer-archive-read/index.ts`: read-only access to private archive JSON after Viewer token validation.
@@ -26,7 +26,7 @@ This branch contains the initial username/password authentication backend for th
 2. Deploy both Edge Functions.
 3. Confirm `FIREBASE_SERVICE_ACCOUNT_JSON` exists in Edge Function Secrets (already added by the project owner). It must contain the complete Firebase service-account JSON and must never be committed or shared.
 4. Set Edge Function secret `ASSEMBLY_BOOTSTRAP_SECRET` to a long random value. Do not send it in chat or commit it.
-5. Deploy `username-login`, `provision-assembly-user`, `validate-viewer-token`, and `viewer-archive-read` using this repository's `supabase/config.toml`.
+5. Deploy `username-login`, `provision-assembly-user`, `firebase-custom-token`, `validate-viewer-token`, and `viewer-archive-read` using this repository's `supabase/config.toml`.\n6. Test `firebase-custom-token` using a valid Supabase admin access token. Confirm the returned custom token can be exchanged by Firebase Authentication for a session in project `summarypengiriman`, and inspect the resulting custom claims.\n7. Add Firebase Authentication sign-in to the Admin/Input client only after the endpoint test succeeds. Then update Firestore Rules to authorize `request.auth.token.assemblyRole` for the intended collections.
 6. Invoke `provision-assembly-user` once with the bootstrap header and the initial Angger account details.
 7. Sign in through `username-login` and then provision the remaining admin accounts while authenticated as Angger.
 8. Test Viewer token validation with an active token, inactive token, schedule restriction, already-registered device, new device under the limit, and a device over the limit. Do not switch the live Viewer app until all tests pass.
