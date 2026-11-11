@@ -19,7 +19,7 @@ This branch contains the initial username/password authentication backend for th
 - The View Summary Pengiriman app remains on its existing corporate token flow for Kabag and employees. Do not replace it with Supabase username/password.
 - Supabase username/password is reserved for internal Admin/Input users and protected archive administration.
 - The current Viewer token validation and Firestore session behavior must remain unchanged during the Admin authentication rollout.
-- This is backend groundwork only. The existing Firebase login screens are not changed in this branch.
+- Admin Input now exchanges the Supabase login result for a Firebase custom token and signs into Firebase Authentication before starting Firestore listeners. This change exists only on this branch and is not deployed.
 
 ## Deployment sequence
 1. Apply the SQL migration in Supabase SQL Editor.
@@ -40,7 +40,7 @@ Bootstrap request also requires header `x-bootstrap-secret`. Subsequent provisio
 
 Do not enable anonymous access to Storage. Storage policies will be configured separately after authentication is verified.
 
-## Access separation decision
+## Admin Input Firebase session flow\n\n1. Admin enters username/password in the Admin Input app.\n2. `username-login` verifies the Supabase credentials and active Assembly profile.\n3. The browser sends the Supabase access token to `firebase-custom-token`.\n4. The function re-verifies the Supabase user and active Assembly profile, then signs a Firebase custom token with top-level custom claims `assemblyRole`, `assemblyUsername`, and `assemblyUserId`.\n5. The browser signs into Firebase Authentication using `signInWithCustomToken`. Only after this succeeds does Admin Input start Firestore realtime listeners.\n6. Logout signs out Firebase Authentication and clears the browser's sessionStorage values.\n\nThis flow does not yet secure Token Manager. Do not tighten `access_tokens` Firestore Rules until Token Manager's create/update/delete/reset actions are migrated to a protected server endpoint or authenticated operator flow.\n\n## Access separation decision
 
 | Application / user group | Authentication |
 | --- | --- |
