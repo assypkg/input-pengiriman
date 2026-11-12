@@ -1,0 +1,97 @@
+name: JO Closed Archive Validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [jo-closed-archive]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate archive UI and Firestore-safe archive behavior
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class Extractor(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.ids = []
+                  self.scripts = []
+                  self.current = []
+                  self.script_type = ""
+                  self.in_script = False
+
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if "id" in attrs:
+                      self.ids.append(attrs["id"])
+                  if tag == "script":
+                      self.in_script = True
+                      self.current = []
+                      self.script_type = attrs.get("type", "")
+
+              def handle_data(self, data):
+                  if self.in_script:
+                      self.current.append(data)
+
+              def handle_endtag(self, tag):
+                  if tag == "script" and self.in_script:
+                      self.scripts.append((self.script_type, "".join(self.current)))
+                      self.in_script = False
+
+          source = Path("index.html").read_text(encoding="utf-8")
+          parser = Extractor()
+          parser.feed(source)
+
+          duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
+          if duplicates:
+              raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
+
+          modules = [code for kind, code in parser.scripts if kind == "module"]
+          scripts = [code for kind, code in parser.scripts if kind != "module"]
+          if not modules or not scripts:
+              raise SystemExit("Expected Firebase module script and application script.")
+          Path("/tmp/input-module.mjs").write_text("\n;\n".join(modules), encoding="utf-8")
+          Path("/tmp/input-app.js").write_text("\n;\n".join(scripts), encoding="utf-8")
+
+          required = [
+              'collection(window.db, "production_data_v2")',
+              "isArchived: true",
+              "archivedAt: serverTimestamp()",
+              "archivedBy: currentUser ||",
+              "window.arsipkanSemuaClosed",
+              "window.bukaArsipJO",
+              "window.renderArsipJO",
+              "window.pulihkanJO",
+              "window.downloadBackupArsip",
+              'if (!item || item.isArchived === true) return false;',
+              "writeBatch(window.db)",
+          ]
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit("Missing archive integration marker: " + marker)
+
+          start = source.index("// --- ARSIP JO CLOSED:")
+          end = source.index("window.cetakPDF", start)
+          archive_code = source[start:end]
+          if "deleteDoc" in archive_code or "batch.delete" in archive_code:
+              raise SystemExit("Archive action must not delete original Firestore records.")
+          if 'doc(window.db, "production_data_v2", item.docId)' not in archive_code:
+              raise SystemExit("Archive must update existing source records by original document ID.")
+          if "JSON.stringify(database)" not in source:
+              raise SystemExit("Existing full database backup must remain available.")
+
+          print(f"HTML parsed; {len(parser.ids)} IDs; {len(parser.scripts)} scripts.")
+          print("Soft archive, original document IDs, restore, archive export, and full backup checks passed.")
+          PY
+          node --check /tmp/input-module.mjs
+          node --check /tmp/input-app.js
