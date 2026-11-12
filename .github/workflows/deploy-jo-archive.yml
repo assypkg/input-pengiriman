@@ -9,6 +9,7 @@ on:
     paths:
       - "supabase/functions/username-login/**"
       - "supabase/functions/archive-closed-deliveries/**"
+      - "supabase/functions/admin-reset-user-password/**"
       - "supabase/config.toml"
       - ".github/workflows/deploy-jo-archive.yml"
 
