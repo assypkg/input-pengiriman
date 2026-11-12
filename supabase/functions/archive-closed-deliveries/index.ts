@@ -198,7 +198,10 @@ Deno.serve(async (req: Request) => {
   try {
     const input = await req.json();
     const auth = await authorize(req);
-    if ("error" in auth) return auth.error;
+    if (!("url" in auth) || !("serviceKey" in auth) || !("profile" in auth)) {
+      if ("error" in auth && auth.error instanceof Response) return auth.error;
+      return json({ success: false, error: "Otorisasi arsip gagal." }, 401);
+    }
     const context = auth as { url: string; serviceKey: string; profile: any };
     await ensurePrivateBucket(context);
 
