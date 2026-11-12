@@ -1,0 +1,123 @@
+name: Validate JO H+1 and Supabase Archive
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [jo-closed-supabase-storage]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Type-check Supabase Edge Functions
+        run: |
+          deno check supabase/functions/username-login/index.ts
+          deno check supabase/functions/archive-closed-deliveries/index.ts
+
+      - name: Validate Admin Input HTML, JavaScript and archive contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class Extractor(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.ids = []
+                  self.scripts = []
+                  self.current = []
+                  self.in_script = False
+                  self.script_type = ""
+
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if "id" in attrs:
+                      self.ids.append(attrs["id"])
+                  if tag == "script":
+                      self.in_script = True
+                      self.current = []
+                      self.script_type = attrs.get("type", "")
+
+              def handle_data(self, data):
+                  if self.in_script:
+                      self.current.append(data)
+
+              def handle_endtag(self, tag):
+                  if tag == "script" and self.in_script:
+                      self.scripts.append((self.script_type, "".join(self.current)))
+                      self.in_script = False
+
+          source = Path("index.html").read_text(encoding="utf-8")
+          parser = Extractor()
+          parser.feed(source)
+
+          duplicates = sorted({item for item in parser.ids if parser.ids.count(item) > 1})
+          if duplicates:
+              raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
+          scripts = [code for _, code in parser.scripts if code.strip()]
+          if not scripts:
+              raise SystemExit("No inline JavaScript found.")
+          Path("/tmp/admin-input.js").write_text("\n;\n".join(scripts), encoding="utf-8")
+
+          required = [
+              '"/functions/v1/username-login"',
+              '"/functions/v1/archive-closed-deliveries"',
+              'sessionStorage.setItem("assembly_admin_access_token"',
+              "tanggalJakartaHariIni() > hPlusOne",
+              "isEligibleForArchive(item)",
+              'action: "archive"',
+              "archiveCache.filter",
+              'archiveStorage: "supabase"',
+              "Supabase Storage / arsip-pengiriman",
+          ]
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit("Missing Admin Input marker: " + marker)
+
+          if "passVal === 'admin'" in source or "passVal === 'admin'" in source:
+              raise SystemExit("Legacy hardcoded Admin password is still present.")
+          if 'archiveCache = database.filter' in source:
+              raise SystemExit("Archive UI must read its records from Supabase, not Firestore.")
+          print(f"HTML parsed; {len(parser.ids)} IDs; {len(scripts)} scripts.")
+          print("Supabase login, H+1 client gate, and Supabase archive API markers passed.")
+          PY
+          node --check /tmp/admin-input.js
+
+      - name: Validate private Storage and server-side H+1 enforcement
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("supabase/functions/archive-closed-deliveries/index.ts").read_text(encoding="utf-8")
+          required = [
+              'const BUCKET = "arsip-pengiriman"',
+              'public: false',
+              '["admin", "superuser"]',
+              'jakartaToday() <= hPlusOne',
+              'record.docId !== id',
+              'archiveState: "ARCHIVED"',
+              'sourceCollection: "production_data_v2"',
+              'action === "archive"',
+              'action === "list"',
+              'action === "restore"',
+          ]
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit("Missing Edge Function safety marker: " + marker)
+          if 'public: true' in source:
+              raise SystemExit("Archive bucket must never be public.")
+          print("Private bucket, Supabase role validation, H+1 server gate and restore/list actions passed.")
+          PY
