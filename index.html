@@ -1870,6 +1870,11 @@
             }
         };
 
+        // Pemeriksaan ulang berkala jika halaman tetap terbuka melewati pergantian hari.
+        window.setInterval(() => {
+            if (typeof window.prosesArsipOtomatis === "function") window.prosesArsipOtomatis();
+        }, 15 * 60 * 1000);
+
         async function callArchiveApi(payload) {
             const accessToken = sessionStorage.getItem("assembly_admin_access_token");
             if (!accessToken) throw new Error("Sesi Supabase berakhir. Silakan login kembali.");
