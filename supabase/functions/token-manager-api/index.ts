@@ -130,12 +130,16 @@ Deno.serve(async (req: Request) => {
     }
     if (!accessToken) return json({ error: "Login superuser diperlukan." }, 401);
 
+    // Validate the exact bearer token explicitly; do not depend on implicit
+    // session/header state inside the Edge Function runtime.
     const caller = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const { data: authData, error: authError } = await caller.auth.getUser();
-    if (authError || !authData.user) return json({ error: "Sesi login tidak valid." }, 401);
+    const { data: authData, error: authError } = await caller.auth.getUser(accessToken);
+    if (authError || !authData.user) {
+      console.error("Superuser token validation failed", authError?.message || "No user returned");
+      return json({ error: "Sesi login tidak valid atau sudah kedaluwarsa. Silakan login ulang." }, 401);
+    }
 
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
