@@ -759,7 +759,6 @@
                 return;
             }
             document.getElementById("resetAccountMessage").textContent = "";
-            document.getElementById("resetAccountResult").style.display = "none";
             document.getElementById("resetAccountPasswordValue").value = "";
             document.getElementById("accountManagerModal").style.display = "flex";
         };
@@ -767,7 +766,6 @@
         window.tutupKelolaAkun = function() {
             document.getElementById("accountManagerModal").style.display = "none";
             document.getElementById("resetAccountPasswordValue").value = "";
-            document.getElementById("resetAccountResult").style.display = "none";
             document.getElementById("resetAccountMessage").textContent = "";
         };
 
