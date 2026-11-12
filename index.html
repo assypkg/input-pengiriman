@@ -673,6 +673,8 @@
         let logDisembunyikan = false;
         let archiveCache = [];
         let archivesLoaded = false;
+        let autoArchiveRunning = false;
+        let autoArchiveLastCheckAt = 0;
         const PASS_ADMIN = "admin"; 
         
         let currentUser = ""; 
@@ -857,6 +859,7 @@
                 renderTabel();
                 updateGlobalKPI();
                 updateArchiveCount();
+                window.prosesArsipOtomatis();
             }, (error) => { console.error(error); });
 
             onSnapshot(doc(window.db, "master_data", "uploaded_file"), (docSnap) => {
@@ -1805,6 +1808,67 @@
             return !!item && item.isArchived !== true &&
                 isClosedForArchive(item) && isHPlusOnePassed(item);
         }
+
+        // Arsip otomatis berjalan saat Admin membuka aplikasi / data realtime diperbarui.
+        // Dokumen sumber Firestore tetap dipertahankan; hanya diberi penanda setelah Supabase sukses.
+        window.prosesArsipOtomatis = async function() {
+            const accessToken = sessionStorage.getItem("assembly_admin_access_token");
+            if (!accessToken || !["admin", "superuser"].includes(currentRole) || autoArchiveRunning) return;
+            const now = Date.now();
+            if (now - autoArchiveLastCheckAt < 5 * 60 * 1000) return;
+            autoArchiveLastCheckAt = now;
+
+            const targets = database.filter(item => item && item.docId && isEligibleForArchive(item));
+            if (!targets.length) return;
+
+            autoArchiveRunning = true;
+            try {
+                const archivedRows = [];
+                const alreadyRows = [];
+                for (let i = 0; i < targets.length; i += 400) {
+                    const group = targets.slice(i, i + 400);
+                    const result = await callArchiveApi({
+                        action: "archive",
+                        records: group.map(item => ({ sourceDocId: item.docId, data: item }))
+                    });
+                    archivedRows.push(...(result.archived || []));
+                    alreadyRows.push(...(result.alreadyArchived || []));
+                }
+
+                const idsToMark = [...new Set([
+                    ...archivedRows.map(item => item.sourceDocId),
+                    ...alreadyRows.map(item => item.sourceDocId)
+                ])];
+                const { doc, serverTimestamp, writeBatch } = window.fbModules;
+                for (let i = 0; i < idsToMark.length; i += 400) {
+                    const batch = writeBatch(window.db);
+                    idsToMark.slice(i, i + 400).forEach(id => {
+                        batch.update(doc(window.db, "production_data_v2", id), {
+                            isArchived: true,
+                            archivedAt: serverTimestamp(),
+                            archivedBy: currentUser || "Admin",
+                            archiveStatus: "CLOSED",
+                            archiveStorage: "supabase"
+                        });
+                    });
+                    await batch.commit();
+                }
+                if (idsToMark.length) {
+                    await loadArchivesFromSupabase();
+                    await catatLogAktivitas("Arsip otomatis JO CLOSED ke Supabase: " +
+                        idsToMark.length.toLocaleString("id-ID") + " baris.");
+                    renderTabel();
+                    updateGlobalKPI();
+                }
+            } catch (error) {
+                console.error("Arsip otomatis gagal; data Firestore tetap dipertahankan:", error);
+                const label = document.getElementById("archiveCountText");
+                if (label) label.textContent = "Arsip otomatis belum berhasil: " + error.message;
+            } finally {
+                autoArchiveRunning = false;
+                updateArchiveCount();
+            }
+        };
 
         async function callArchiveApi(payload) {
             const accessToken = sessionStorage.getItem("assembly_admin_access_token");
