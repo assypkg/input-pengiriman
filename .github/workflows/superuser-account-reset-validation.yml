@@ -90,9 +90,9 @@ jobs:
           for marker in [
               'caller.role !== "superuser"',
               'caller.username !== "angger"',
-              '"bayua"',
-              '"cyntiar"',
-              '"nuruls"',
+              "bayua:",
+              "cyntiar:",
+              "nuruls:",
               'method: "PUT"',
               '"/auth/v1/admin/users/"',
               'temporary_password: temporaryPassword',
