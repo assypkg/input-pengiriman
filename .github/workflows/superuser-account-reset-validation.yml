@@ -1,0 +1,107 @@
+name: Superuser Account Password Reset Validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [superuser-account-management]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check password reset Edge Function
+        run: deno check supabase/functions/admin-reset-user-password/index.ts
+
+      - name: Validate UI and role restrictions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class Parser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.ids = []
+                  self.scripts = []
+                  self.current = []
+                  self.in_script = False
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if "id" in attrs:
+                      self.ids.append(attrs["id"])
+                  if tag == "script":
+                      self.in_script = True
+                      self.current = []
+              def handle_data(self, data):
+                  if self.in_script:
+                      self.current.append(data)
+              def handle_endtag(self, tag):
+                  if tag == "script" and self.in_script:
+                      self.scripts.append("".join(self.current))
+                      self.in_script = False
+
+          source = Path("index.html").read_text(encoding="utf-8")
+          parser = Parser()
+          parser.feed(source)
+          duplicates = sorted({x for x in parser.ids if parser.ids.count(x) > 1})
+          if duplicates:
+              raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
+          Path("/tmp/admin-input.js").write_text("\n;\n".join(parser.scripts), encoding="utf-8")
+
+          for marker in [
+              'id="btnKelolaAkun"',
+              'id="accountManagerModal"',
+              'id="resetAccountUsername"',
+              'id="resetAccountPasswordValue"',
+              'result.profile.role === "superuser" ? "inline-block" : "none"',
+              'sessionStorage.getItem("assembly_admin_role") !== "superuser"',
+              '/functions/v1/admin-reset-user-password',
+              'value="bayua"',
+              'value="cyntiar"',
+              'value="nuruls"',
+              'window.salinPasswordAkun',
+          ]:
+              if marker not in source:
+                  raise SystemExit("Missing UI access-control marker: " + marker)
+
+          if "temporary_password" in source and "sessionStorage.setItem" in source:
+              # A generated secret must not be persisted in browser storage.
+              if 'sessionStorage.setItem("resetAccountPasswordValue"' in source:
+                  raise SystemExit("Generated password must not be persisted.")
+          print(f"HTML parsed; {len(parser.ids)} IDs; Superuser menu and password display checks passed.")
+          PY
+          node --check /tmp/admin-input.js
+
+      - name: Validate reset endpoint security contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("supabase/functions/admin-reset-user-password/index.ts").read_text(encoding="utf-8")
+          for marker in [
+              'caller.role !== "superuser"',
+              'caller.username !== "angger"',
+              '"bayua"',
+              '"cyntiar"',
+              '"nuruls"',
+              'method: "PUT"',
+              '"/auth/v1/admin/users/"',
+              'temporary_password: temporaryPassword',
+          ]:
+              if marker not in source:
+                  raise SystemExit("Missing backend security marker: " + marker)
+          if '"angger":' in source:
+              raise SystemExit("Superuser account must not be reset through this endpoint.")
+          if "SUPABASE_SERVICE_ROLE_KEY" not in source:
+              raise SystemExit("Service-role key must be read only from server environment.")
+          print("Backend superuser authorization, target allowlist, and Auth Admin password update checks passed.")
+          PY
