@@ -15,23 +15,6 @@ const RESETTABLE_USERS: Record<string, string> = {
   cyntiar: "Cyntia R.",
   nuruls: "Nurul S.",
 };
-const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-
-function generateTemporaryPassword(length = 20): string {
-  const output: string[] = [];
-  const limit = Math.floor(256 / PASSWORD_ALPHABET.length) * PASSWORD_ALPHABET.length;
-  while (output.length < length) {
-    const bytes = new Uint8Array(Math.max(16, length - output.length + 8));
-    crypto.getRandomValues(bytes);
-    for (const byte of bytes) {
-      if (byte >= limit) continue;
-      output.push(PASSWORD_ALPHABET[byte % PASSWORD_ALPHABET.length]);
-      if (output.length === length) break;
-    }
-  }
-  return output.join("");
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed." }, 405);
@@ -70,8 +53,10 @@ Deno.serve(async (req: Request) => {
 
     const input = await req.json();
     const username = typeof input?.username === "string" ? input.username.trim().toLowerCase() : "";
+    const password = typeof input?.password === "string" ? input.password : "";
     const fullName = RESETTABLE_USERS[username];
     if (!fullName) return json({ success: false, error: "Akun target tidak termasuk daftar Admin yang boleh di-reset." }, 400);
+    if (password.length < 8 || password.length > 72) return json({ success: false, error: "Password harus 8–72 karakter." }, 400);
 
     const targetUrl = new URL(supabaseUrl + "/rest/v1/assembly_users");
     targetUrl.searchParams.set("username", "eq." + username);
@@ -85,7 +70,7 @@ Deno.serve(async (req: Request) => {
 
     const projectHost = new URL(supabaseUrl).hostname;
     const emailAlias = username + "@" + projectHost;
-    const temporaryPassword = generateTemporaryPassword();
+    const newPassword = password;
 
     if (!target) {
       // Recover only a matching reserved alias; never adopt an unrelated Auth user.
@@ -107,7 +92,7 @@ Deno.serve(async (req: Request) => {
           headers: adminHeaders,
           body: JSON.stringify({
             email: emailAlias,
-            password: temporaryPassword,
+            password: newPassword,
             email_confirm: true,
             user_metadata: { username, full_name: fullName },
             app_metadata: { assembly_role: "admin" },
@@ -151,8 +136,8 @@ Deno.serve(async (req: Request) => {
       }
       target = inserted?.[0] || { username, full_name: fullName, role: "admin", is_active: true };
       // New Auth user already received the generated password; existing one was updated.
-      return json({ success: true, username, full_name: fullName, temporary_password: temporaryPassword,
-        message: "Akun Admin berhasil disiapkan dan password baru dibuat." });
+      return json({ success: true, username, full_name: fullName, password_updated: true,
+        message: "Akun Admin berhasil disiapkan dan password diperbarui." });
     }
 
     if (target.is_active !== true || target.role !== "admin" || !target.user_id) {
@@ -183,7 +168,7 @@ Deno.serve(async (req: Request) => {
       username,
       full_name: target.full_name || fullName,
       temporary_password: temporaryPassword,
-      message: "Password berhasil di-reset. Password hanya ditampilkan pada hasil ini.",
+      message: "Password berhasil diperbarui.",
     });
   } catch (error) {
     console.error("admin-reset-user-password", error);
