@@ -132,7 +132,24 @@ async function ensurePrivateBucket(context: { url: string; serviceKey: string })
 async function getStoredRecord(context: { url: string; serviceKey: string }, path: string) {
   const response = await storageRequest(context, "/object/" + BUCKET + "/" + encodePath(path));
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error("Gagal membaca file arsip yang sudah ada.");
+
+  // Supabase Storage pada beberapa respons mengirim "Object not found"
+  // sebagai HTTP 400, bukan 404. Itu berarti file baru belum ada, bukan kegagalan baca.
+  if (response.status === 400) {
+    const details = await response.text();
+    let message = details;
+    try {
+      const parsed = JSON.parse(details);
+      message = String(parsed.message || parsed.error || parsed.error_description || details);
+    } catch (_) {}
+    if (/object\s+not\s+found|not\s+found/i.test(message)) return null;
+    throw new Error("Gagal membaca file arsip yang sudah ada: " + message.slice(0, 200));
+  }
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error("Gagal membaca file arsip yang sudah ada (HTTP " + response.status + "): " + details.slice(0, 200));
+  }
   return await response.json();
 }
 
