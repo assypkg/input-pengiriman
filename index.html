@@ -531,6 +531,10 @@
             </div>
         </div>
 
+        <div style="font-size:11px;color:#718093;margin:6px 0 10px;">
+            Arsip hanya tersedia untuk pengiriman CLOSED setelah masa H+1 selesai (mulai H+2 pukul 00.00 WIB).
+        </div>
+
         <!-- PANEL FILTER & PENCARIAN -->
         <div class="filter-group">
             <input type="text" id="searchInput" class="search-box" style="flex: 2;" placeholder="🔍 Cari Nama Produk, Job Order, PO#, atau Kode Item..." oninput="renderTabel()">
@@ -666,6 +670,8 @@
 
         let database = [];
         let logDisembunyikan = false;
+        let archiveCache = [];
+        let archivesLoaded = false;
         const PASS_ADMIN = "admin"; 
         
         let currentUser = ""; 
@@ -694,41 +700,62 @@
             }
         });
 
-        window.prosesLogin = function() {
-            let userVal = document.getElementById('loginUsername').value.trim().toLowerCase();
-            let passVal = document.getElementById('loginPassword').value.trim();
-            let errBox = document.getElementById('loginError');
+        const SUPABASE_URL = "https://wcsjjdzxnwhzqkqninky.supabase.co";
+        const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_UadEwYUBc9Whu3m7VKrF6g_lAjS_Y4U";
 
-            if (userVal === 'cyntia_r' && passVal === 'admin') {
-                currentUser = "Cyntia R.";
-                currentRole = "admin";
-            } else if (userVal === 'bayu_a' && passVal === 'admin') {
-                currentUser = "Bayu A.";
-                currentRole = "admin";
-            } else if ((userVal === 'angger' || userVal === 'developer') && passVal === 'admin') {
-                currentUser = "Angger Suprihadi";
-                currentRole = "developer";
-            } else {
-                errBox.style.display = 'block'; 
+        window.prosesLogin = async function() {
+            const userVal = document.getElementById('loginUsername').value.trim().toLowerCase();
+            const passVal = document.getElementById('loginPassword').value;
+            const errBox = document.getElementById('loginError');
+            const button = document.querySelector('#welcomeScreen .btn-continue');
+            if (!userVal || !passVal) {
+                errBox.textContent = "Username dan password wajib diisi.";
+                errBox.style.display = 'block';
                 return;
             }
-
+            if (button) { button.disabled = true; button.style.opacity = "0.65"; }
             errBox.style.display = 'none';
-            document.getElementById('welcomeScreen').classList.add('slide-out');
-            
-            if (currentRole === 'developer') {
-                document.getElementById('labelAdmin').innerHTML = `🛠️ Developer: <strong>${currentUser}</strong>`;
-            } else {
-                document.getElementById('labelAdmin').innerHTML = `👤 Admin: <strong>${currentUser}</strong>`;
+            try {
+                const response = await fetch(SUPABASE_URL + "/functions/v1/username-login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "apikey": SUPABASE_PUBLISHABLE_KEY },
+                    body: JSON.stringify({ username: userVal, password: passVal })
+                });
+                const result = await response.json();
+                if (!response.ok || !result.access_token || !result.profile) {
+                    throw new Error(result.error || "Username atau password salah.");
+                }
+                if (!["admin", "superuser"].includes(result.profile.role)) {
+                    throw new Error("Akun tidak memiliki hak akses Admin Input.");
+                }
+
+                currentUser = result.profile.full_name || result.profile.username;
+                currentRole = result.profile.role === "superuser" ? "developer" : "admin";
+                sessionStorage.setItem("assembly_admin_access_token", result.access_token);
+                sessionStorage.setItem("assembly_admin_refresh_token", result.refresh_token || "");
+                sessionStorage.setItem("assembly_admin_username", result.profile.username);
+                sessionStorage.setItem("assembly_admin_role", result.profile.role);
+
+                document.getElementById('welcomeScreen').classList.add('slide-out');
+                document.getElementById('labelAdmin').innerHTML =
+                    (currentRole === "developer" ? "🛠️ Superuser: " : "👤 Admin: ") +
+                    "<strong>" + currentUser.replace(/[&<>"']/g, "") + "</strong>";
+                catatLogAktivitas("Sistem diakses.");
+                await loadArchivesFromSupabase();
+            } catch (error) {
+                errBox.textContent = error.message || "Login gagal. Periksa koneksi dan akun.";
+                errBox.style.display = 'block';
+            } finally {
+                if (button) { button.disabled = false; button.style.opacity = "1"; }
             }
-            catatLogAktivitas(`Sistem diakses.`);
-        }
+        };
 
         window.prosesLogout = async function() {
             if (confirm("Apakah Anda yakin ingin keluar dari sistem?")) {
                 if (currentUser) {
                     await catatLogAktivitas(`Keluar dari sistem.`);
                 }
+                ["assembly_admin_access_token","assembly_admin_refresh_token","assembly_admin_username","assembly_admin_role"].forEach(key => sessionStorage.removeItem(key));
                 window.location.reload();
             }
         }
@@ -743,6 +770,7 @@
                 });
                 renderTabel();
                 updateGlobalKPI();
+                updateArchiveCount();
             }, (error) => { console.error(error); });
 
             onSnapshot(doc(window.db, "master_data", "uploaded_file"), (docSnap) => {
@@ -1650,7 +1678,7 @@
         };
 
 
-        // --- ARSIP JO CLOSED: penanda pada dokumen asli, tanpa memindahkan/menghapus dokumen ---
+        // --- ARSIP JO CLOSED: data utama disimpan di private Supabase Storage ---
         function nilaiSisaArsip(item) {
             if (item?.sisa !== undefined && item?.sisa !== null && String(item.sisa).trim() !== "") {
                 const value = Number(item.sisa);
@@ -1659,143 +1687,252 @@
             const order = Number(item?.order), hasil = Number(item?.hasil);
             return Number.isFinite(order) && Number.isFinite(hasil) ? order - hasil : NaN;
         }
-        function isClosedForArchive(item) {
-            const sisa = nilaiSisaArsip(item);
-            return !!item && Number.isFinite(sisa) && sisa <= 0;
+
+        function tanggalJakartaHariIni() {
+            const parts = new Intl.DateTimeFormat("en-GB", {
+                timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit"
+            }).formatToParts(new Date());
+            const get = type => parts.find(part => part.type === type)?.value || "";
+            return get("year") + "-" + get("month") + "-" + get("day");
         }
+
+        function tambahHariTanggalISO(dateStr, jumlahHari) {
+            if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(dateStr || ""))) return "";
+            const [year, month, day] = dateStr.split("-").map(Number);
+            const date = new Date(Date.UTC(year, month - 1, day + jumlahHari));
+            return date.getUTCFullYear() + "-" +
+                String(date.getUTCMonth() + 1).padStart(2, "0") + "-" +
+                String(date.getUTCDate()).padStart(2, "0");
+        }
+
+        function isClosedForArchive(item) {
+            const remaining = nilaiSisaArsip(item);
+            return !!item && Number.isFinite(remaining) && remaining <= 0;
+        }
+
+        function isHPlusOnePassed(item) {
+            const hPlusOne = tambahHariTanggalISO(item?.tanggal, 1);
+            return !!hPlusOne && tanggalJakartaHariIni() > hPlusOne;
+        }
+
+        function isEligibleForArchive(item) {
+            return !!item && item.isArchived !== true &&
+                isClosedForArchive(item) && isHPlusOnePassed(item);
+        }
+
+        async function callArchiveApi(payload) {
+            const accessToken = sessionStorage.getItem("assembly_admin_access_token");
+            if (!accessToken) throw new Error("Sesi Supabase berakhir. Silakan login kembali.");
+            const response = await fetch(SUPABASE_URL + "/functions/v1/archive-closed-deliveries", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "apikey": SUPABASE_PUBLISHABLE_KEY,
+                    "Authorization": "Bearer " + accessToken
+                },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result.success !== true) {
+                throw new Error(result.error || "Permintaan arsip ke Supabase gagal.");
+            }
+            return result;
+        }
+
+        async function loadArchivesFromSupabase() {
+            try {
+                const result = await callArchiveApi({ action: "list" });
+                archiveCache = Array.isArray(result.records) ? result.records : [];
+                archivesLoaded = true;
+                updateArchiveCount();
+                if (document.getElementById("arsipJOModal")?.style.display === "flex") renderArsipJO();
+                return archiveCache;
+            } catch (error) {
+                archivesLoaded = false;
+                console.error("Gagal memuat arsip Supabase:", error);
+                const label = document.getElementById("archiveCountText");
+                if (label) label.textContent = "Arsip Supabase belum dapat dimuat: " + error.message;
+                return [];
+            }
+        }
+
         function updateArchiveCount() {
-            const count = database.filter(item => item && item.isArchived === true).length;
-            const pending = database.filter(item => item && item.isArchived !== true && isClosedForArchive(item)).length;
+            const count = archiveCache.length;
+            const pending = database.filter(item => item && isEligibleForArchive(item)).length;
+            const waiting = database.filter(item =>
+                item && item.isArchived !== true && isClosedForArchive(item) && !isHPlusOnePassed(item)
+            ).length;
             const badge = document.getElementById("archiveCountBadge");
-            if (badge) badge.textContent = String(count);
+            if (badge) badge.textContent = count.toLocaleString("id-ID");
             const button = document.querySelector(".btn-archive");
-            if (button) button.textContent = pending > 0 ? "Arsipkan JO CLOSED (" + pending.toLocaleString("id-ID") + ")" : "Arsipkan JO CLOSED";
+            if (button) button.textContent = pending > 0
+                ? "Arsipkan JO CLOSED (" + pending.toLocaleString("id-ID") + ")"
+                : "Arsipkan JO CLOSED";
             const label = document.getElementById("archiveCountText");
-            if (label) label.textContent = count.toLocaleString("id-ID") + " baris sudah diarsipkan";
+            if (label) label.textContent = count.toLocaleString("id-ID") +
+                " baris tersimpan di Supabase" +
+                (waiting > 0 ? " • " + waiting.toLocaleString("id-ID") + " masih menunggu H+1" : "");
         }
 
         window.arsipkanSemuaClosed = async function() {
-            const targets = database.filter(item => item && item.isArchived !== true && item.docId && isClosedForArchive(item));
+            const targets = database.filter(item => item && item.docId && isEligibleForArchive(item));
             if (!targets.length) {
-                alert("Tidak ada baris pengiriman CLOSED yang perlu diarsipkan.");
+                const waiting = database.filter(item =>
+                    item && item.isArchived !== true && isClosedForArchive(item) && !isHPlusOnePassed(item)
+                ).length;
+                alert(waiting
+                    ? "Belum ada JO yang memenuhi syarat. Ada " + waiting.toLocaleString("id-ID") +
+                      " baris CLOSED yang masih menunggu H+1 selesai."
+                    : "Tidak ada baris pengiriman CLOSED yang memenuhi syarat arsip.");
                 return;
             }
+
             if (!confirm(
-                "Arsipkan " + targets.length.toLocaleString("id-ID") + " baris pengiriman CLOSED?\\n\\n" +
-                "Data tidak dihapus. Dokumen dan ID asli tetap berada di production_data_v2; hanya diberi penanda arsip.\\n\\n" +
-                "Proses per baris pengiriman, bukan per kode JO, agar baris JO yang masih OPEN tidak ikut terarsip."
+                "Simpan " + targets.length.toLocaleString("id-ID") +
+                " baris CLOSED ke Supabase Storage?\\n\\n" +
+                "Syarat: status CLOSED dan tanggal pengiriman sudah melewati H+1.\\n" +
+                "Data lengkap akan disimpan di bucket private arsip-pengiriman.\\n" +
+                "Firestore hanya diberi penanda setelah penyimpanan Supabase berhasil."
             )) return;
 
             const button = document.querySelector(".btn-archive");
             const original = button ? button.textContent : "";
-            if (button) { button.disabled = true; button.textContent = "Mengarsipkan..."; }
+            if (button) { button.disabled = true; button.textContent = "Menyimpan ke Supabase..."; }
+
             try {
-                const { doc, writeBatch, serverTimestamp } = window.fbModules;
-                let total = 0;
-                for (let i = 0; i < targets.length; i += 400) {
-                    const batch = writeBatch(window.db);
-                    targets.slice(i, i + 400).forEach(item => {
-                        batch.update(doc(window.db, "production_data_v2", item.docId), {
-                            isArchived: true,
-                            archivedAt: serverTimestamp(),
-                            archivedBy: currentUser || "Admin",
-                            archiveStatus: "CLOSED"
+                const result = await callArchiveApi({
+                    action: "archive",
+                    records: targets.map(item => ({ sourceDocId: item.docId, data: item }))
+                });
+                const archivedIds = new Set((result.archived || []).map(item => item.sourceDocId));
+                const alreadyIds = new Set((result.alreadyArchived || []).map(item => item.sourceDocId));
+                const idsToMark = [...new Set([...archivedIds, ...alreadyIds])];
+
+                if (idsToMark.length) {
+                    const { doc, updateDoc, serverTimestamp, writeBatch } = window.fbModules;
+                    for (let i = 0; i < idsToMark.length; i += 400) {
+                        const batch = writeBatch(window.db);
+                        idsToMark.slice(i, i + 400).forEach(id => {
+                            batch.update(doc(window.db, "production_data_v2", id), {
+                                isArchived: true,
+                                archivedAt: serverTimestamp(),
+                                archivedBy: currentUser || "Admin",
+                                archiveStatus: "CLOSED",
+                                archiveStorage: "supabase"
+                            });
                         });
-                    });
-                    await batch.commit();
-                    total += Math.min(400, targets.length - i);
+                        await batch.commit();
+                    }
                 }
-                await catatLogAktivitas("Arsip JO CLOSED: " + total.toLocaleString("id-ID") + " baris pengiriman diarsipkan.");
-                alert(total.toLocaleString("id-ID") + " baris CLOSED berhasil diarsipkan. Dokumen asli tetap tersimpan.");
+
+                await loadArchivesFromSupabase();
+                await catatLogAktivitas("Arsip JO CLOSED ke Supabase: " +
+                    idsToMark.length.toLocaleString("id-ID") + " baris.");
+                alert((result.archived || []).length.toLocaleString("id-ID") +
+                    " baris baru berhasil disimpan ke Supabase." +
+                    ((result.alreadyArchived || []).length
+                        ? "\\n" + result.alreadyArchived.length.toLocaleString("id-ID") + " baris sudah ada di arsip."
+                        : ""));
                 renderTabel();
                 updateGlobalKPI();
-                if (document.getElementById("arsipJOModal")?.style.display === "flex") renderArsipJO();
             } catch (error) {
-                console.error("Gagal mengarsipkan JO CLOSED:", error);
-                alert("Pengarsipan gagal. Data tidak dihapus. Periksa koneksi dan izin Firestore.");
+                console.error("Gagal menyimpan arsip ke Supabase:", error);
+                alert("Arsip belum selesai: " + error.message +
+                    "\\nData Firestore tidak ditandai arsip apabila penyimpanan Supabase gagal.");
             } finally {
                 if (button) { button.disabled = false; button.textContent = original; }
                 updateArchiveCount();
             }
         };
 
-        window.bukaArsipJO = function() {
+        window.bukaArsipJO = async function() {
             const search = document.getElementById("searchArsipJO");
             if (search) search.value = "";
-            renderArsipJO();
             const modal = document.getElementById("arsipJOModal");
             if (modal) modal.style.display = "flex";
+            await loadArchivesFromSupabase();
+            renderArsipJO();
         };
+
         window.tutupArsipJO = function() {
             const modal = document.getElementById("arsipJOModal");
             if (modal) modal.style.display = "none";
         };
+
         window.renderArsipJO = function() {
             const body = document.getElementById("archiveTableBody");
             if (!body) return;
             const keyword = String(document.getElementById("searchArsipJO")?.value || "").trim().toLowerCase();
-            const rows = database.filter(item => item && item.isArchived === true).filter(item => {
+            const rows = archiveCache.filter(item => {
                 const haystack = [item.jobOrder, item.poNum, item.kodeItem, item.produk, item.tanggal]
                     .map(value => String(value || "").toLowerCase()).join(" ");
                 return haystack.includes(keyword);
-            }).sort((a, b) => {
-                const millis = value => value?.toDate ? value.toDate().getTime() : (value ? new Date(value).getTime() : 0);
-                return millis(b.archivedAt) - millis(a.archivedAt);
-            });
+            }).sort((a, b) => String(b.archivedAt || "").localeCompare(String(a.archivedAt || "")));
+
             updateArchiveCount();
             body.innerHTML = "";
             if (!rows.length) {
                 const tr = document.createElement("tr"), td = document.createElement("td");
                 td.colSpan = 10; td.style.textAlign = "center"; td.style.padding = "18px";
                 td.style.color = "#718093";
-                td.textContent = keyword ? "Arsip tidak ditemukan." : "Belum ada JO CLOSED yang diarsipkan.";
+                td.textContent = archivesLoaded
+                    ? (keyword ? "Arsip tidak ditemukan." : "Belum ada JO CLOSED di Supabase Storage.")
+                    : "Belum berhasil memuat arsip Supabase.";
                 tr.appendChild(td); body.appendChild(tr); return;
             }
             rows.forEach(item => {
                 const tr = document.createElement("tr");
-                const archivedAt = item.archivedAt?.toDate
-                    ? item.archivedAt.toDate().toLocaleString("id-ID")
-                    : (item.archivedAt ? String(item.archivedAt) : "-");
                 [
                     formatTanggalID(item.tanggal), item.jobOrder || "-", item.poNum || "-",
                     item.kodeItem || "-", item.produk || "-",
                     Number(item.order || 0).toLocaleString("id-ID"),
                     Number(item.hasil || 0).toLocaleString("id-ID"),
                     Number(nilaiSisaArsip(item) || 0).toLocaleString("id-ID"),
-                    archivedAt
+                    item.archivedAt ? new Date(item.archivedAt).toLocaleString("id-ID") : "-"
                 ].forEach(value => {
                     const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
                 });
                 const action = document.createElement("td");
                 const restore = document.createElement("button");
-                restore.className = "btn-restore-archive"; restore.textContent = "Pulihkan";
-                restore.addEventListener("click", () => pulihkanJO(item.docId));
+                restore.className = "btn-restore-archive";
+                restore.textContent = "Pulihkan";
+                restore.addEventListener("click", () => pulihkanJO(item.sourceDocId));
                 action.appendChild(restore); tr.appendChild(action); body.appendChild(tr);
             });
         };
+
         window.pulihkanJO = async function(docId) {
-            const item = database.find(row => row && row.docId === docId && row.isArchived === true);
+            const item = archiveCache.find(row => row && row.sourceDocId === docId);
             if (!item) return;
             if (!confirm("Pulihkan JO " + (item.jobOrder || "") + " ke daftar pengiriman aktif?")) return;
             try {
+                const result = await callArchiveApi({ action: "restore", sourceDocId: docId });
+                if (!result.success) throw new Error(result.error || "Pemulihan arsip gagal.");
                 const { doc, updateDoc, serverTimestamp } = window.fbModules;
                 await updateDoc(doc(window.db, "production_data_v2", docId), {
                     isArchived: false,
                     restoredAt: serverTimestamp(),
                     restoredBy: currentUser || "Admin"
                 });
+                await loadArchivesFromSupabase();
                 await catatLogAktivitas("Pemulihan arsip JO: " + (item.jobOrder || docId) + ".");
                 alert("Data berhasil dipulihkan ke daftar aktif.");
-                renderArsipJO(); renderTabel(); updateGlobalKPI();
+                renderTabel(); updateGlobalKPI();
             } catch (error) {
                 console.error("Gagal memulihkan arsip JO:", error);
-                alert("Data arsip gagal dipulihkan.");
+                alert("Gagal memulihkan: " + error.message);
             }
         };
+
         window.downloadBackupArsip = function() {
-            const rows = database.filter(item => item && item.isArchived === true);
-            if (!rows.length) { alert("Belum ada data arsip."); return; }
-            const payload = { type: "arsip-jo-closed", exportedAt: new Date().toISOString(), total: rows.length, records: rows };
+            if (!archiveCache.length) { alert("Belum ada data arsip di Supabase."); return; }
+            const payload = {
+                type: "arsip-jo-closed",
+                storage: "Supabase Storage / arsip-pengiriman",
+                exportedAt: new Date().toISOString(),
+                total: archiveCache.length,
+                records: archiveCache
+            };
             const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
