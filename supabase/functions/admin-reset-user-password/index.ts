@@ -135,7 +135,7 @@ Deno.serve(async (req: Request) => {
         return json({ success: false, error: "Akun autentikasi tersedia, tetapi profil Admin gagal dibuat. Hubungi Superuser." }, 503);
       }
       target = inserted?.[0] || { username, full_name: fullName, role: "admin", is_active: true };
-      // New Auth user already received the generated password; existing one was updated.
+      // New Auth user received the supplied password; existing one was updated.
       return json({ success: true, username, full_name: fullName, password_updated: true,
         message: "Akun Admin berhasil disiapkan dan password diperbarui." });
     }
@@ -167,7 +167,7 @@ Deno.serve(async (req: Request) => {
       success: true,
       username,
       full_name: target.full_name || fullName,
-      temporary_password: newPassword,
+      password_updated: true,
       message: "Password berhasil diperbarui.",
     });
   } catch (error) {
