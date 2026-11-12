@@ -9,6 +9,7 @@ on:
       - "supabase/functions/username-login/**"
       - "supabase/functions/provision-assembly-user/**"
       - "supabase/functions/token-manager-api/**"
+      - "supabase/functions/admin-reset-user-password/**"
       - "supabase/config.toml"
       - ".github/workflows/deploy-assembly-edge-functions.yml"
 
@@ -36,5 +37,10 @@ jobs:
 
       - name: Deploy token-manager-api
         run: supabase functions deploy token-manager-api --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt --yes
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy admin-reset-user-password
+        run: supabase functions deploy admin-reset-user-password --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt --yes
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
