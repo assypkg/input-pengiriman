@@ -33,3 +33,14 @@ jobs:
         run: supabase functions deploy archive-closed-deliveries --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt --yes
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Smoke test archive endpoint rejects unauthenticated requests
+        env:
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_UadEwYUBc9Whu3m7VKrF6g_lAjS_Y4U
+        run: |
+          status=$(curl -sS -o /tmp/archive-smoke.json -w "%{http_code}" \
+            -X POST "https://wcsjjdzxnwhzqkqninky.supabase.co/functions/v1/archive-closed-deliveries" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            --data '{"action":"list"}')
+          cat /tmp/archive-smoke.json
+          test "$status" = "401"
