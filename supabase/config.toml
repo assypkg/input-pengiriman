@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.token-manager-api]
 verify_jwt = false
+
+[functions.admin-reset-user-password]
+verify_jwt = false
