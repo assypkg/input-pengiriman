@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.archive-closed-deliveries]
 verify_jwt = false
+
+[functions.admin-reset-user-password]
+verify_jwt = false

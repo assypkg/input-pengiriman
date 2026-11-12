@@ -385,6 +385,7 @@
                 <span style="font-weight: bold; color: var(--primary);">⏱️ 30 Riwayat Aktivitas Terakhir (Cloud Real-Time):</span>
                 <div>
                     <span id="labelAdmin" style="font-size: 11px; background: #dfe6e9; color: #2d3436; padding: 5px 10px; border-radius: 12px; margin-right: 10px; font-weight: bold;">👤 Admin: -</span>
+                    <button id="btnKelolaAkun" class="btn-clear-log" onclick="bukaKelolaAkun()" style="display:none;background:#203764;margin-right:5px;">👥 Kelola Akun</button>
                     <button class="btn-clear-log" onclick="prosesLogout()" style="background: #e17055; margin-right: 5px;">🚪 Keluar</button>
                     <button class="btn-clear-log" onclick="hapusLogAktivitas()">🔒 Hapus Log</button>
                 </div>
@@ -731,6 +732,8 @@
 
                 currentUser = result.profile.full_name || result.profile.username;
                 currentRole = result.profile.role === "superuser" ? "developer" : "admin";
+                const accountButton = document.getElementById("btnKelolaAkun");
+                if (accountButton) accountButton.style.display = result.profile.role === "superuser" ? "inline-block" : "none";
                 sessionStorage.setItem("assembly_admin_access_token", result.access_token);
                 sessionStorage.setItem("assembly_admin_refresh_token", result.refresh_token || "");
                 sessionStorage.setItem("assembly_admin_username", result.profile.username);
@@ -747,6 +750,90 @@
                 errBox.style.display = 'block';
             } finally {
                 if (button) { button.disabled = false; button.style.opacity = "1"; }
+            }
+        };
+
+        window.bukaKelolaAkun = function() {
+            if (sessionStorage.getItem("assembly_admin_role") !== "superuser") {
+                alert("Menu ini hanya untuk Superuser.");
+                return;
+            }
+            document.getElementById("resetAccountMessage").textContent = "";
+            document.getElementById("resetAccountResult").style.display = "none";
+            document.getElementById("resetAccountPasswordValue").value = "";
+            document.getElementById("accountManagerModal").style.display = "flex";
+        };
+
+        window.tutupKelolaAkun = function() {
+            document.getElementById("accountManagerModal").style.display = "none";
+            document.getElementById("resetAccountPasswordValue").value = "";
+            document.getElementById("resetAccountResult").style.display = "none";
+            document.getElementById("resetAccountMessage").textContent = "";
+        };
+
+        window.resetPasswordAkun = async function() {
+            if (sessionStorage.getItem("assembly_admin_role") !== "superuser") {
+                alert("Akses ditolak. Hanya Superuser yang boleh mengatur ulang password.");
+                return;
+            }
+            const username = document.getElementById("resetAccountUsername").value;
+            const token = sessionStorage.getItem("assembly_admin_access_token");
+            const button = document.getElementById("btnResetAccountPassword");
+            const message = document.getElementById("resetAccountMessage");
+            const resultBox = document.getElementById("resetAccountResult");
+            if (!token) {
+                message.textContent = "Sesi login berakhir. Silakan login kembali.";
+                return;
+            }
+            const names = { bayua: "Bayu A.", cyntiar: "Cyntia R.", nuruls: "Nurul S." };
+            if (!confirm("Reset password akun " + (names[username] || username) + "? Password lama akun tersebut tidak akan berlaku untuk login berikutnya.")) return;
+
+            if (button) { button.disabled = true; button.textContent = "Memproses..."; }
+            message.textContent = "Meminta Supabase membuat password baru...";
+            resultBox.style.display = "none";
+            document.getElementById("resetAccountPasswordValue").value = "";
+            try {
+                const response = await fetch(SUPABASE_URL + "/functions/v1/admin-reset-user-password", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "apikey": SUPABASE_PUBLISHABLE_KEY,
+                        "Authorization": "Bearer " + token
+                    },
+                    body: JSON.stringify({ username })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || data.success !== true || !data.temporary_password) {
+                    throw new Error(data.error || "Reset password gagal.");
+                }
+
+                document.getElementById("resetAccountName").textContent =
+                    (data.full_name || names[username] || username) + " (" + data.username + ")";
+                document.getElementById("resetAccountPasswordValue").value = data.temporary_password;
+                resultBox.style.display = "block";
+                message.textContent = "Berhasil. Salin password sebelum menutup jendela ini.";
+                try { await catatLogAktivitas("Reset password akun Admin: " + username + "."); } catch (_) {}
+            } catch (error) {
+                message.textContent = error.message || "Reset password gagal.";
+                resultBox.style.display = "none";
+            } finally {
+                if (button) { button.disabled = false; button.textContent = "Buat Password Baru"; }
+            }
+        };
+
+        window.salinPasswordAkun = async function() {
+            const field = document.getElementById("resetAccountPasswordValue");
+            const value = field.value;
+            if (!value) return;
+            try {
+                await navigator.clipboard.writeText(value);
+                document.getElementById("resetAccountMessage").textContent = "Password berhasil disalin.";
+            } catch (_) {
+                field.focus();
+                field.select();
+                const copied = document.execCommand("copy");
+                document.getElementById("resetAccountMessage").textContent =
+                    copied ? "Password berhasil disalin." : "Pilih dan salin password secara manual.";
             }
         };
 
@@ -1950,5 +2037,47 @@
 
         window.cetakPDF = function() { window.print(); };
     </script>
+    <!-- Superuser-only account password management modal -->
+    <div id="accountManagerModal" class="modal">
+        <div class="modal-content" style="max-width:520px;width:96%;padding:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:2px solid var(--primary);padding-bottom:12px;margin-bottom:14px;">
+                <div>
+                    <h3 style="margin:0;color:var(--primary);">Kelola Password Admin</h3>
+                    <div style="font-size:11px;color:#718093;margin-top:4px;">Khusus Superuser — password baru dibuat otomatis</div>
+                </div>
+                <button class="btn-clear-log" onclick="tutupKelolaAkun()" style="font-size:18px;padding:4px 10px;">×</button>
+            </div>
+
+            <label for="resetAccountUsername" style="font-size:12px;font-weight:bold;display:block;margin-bottom:6px;">Pilih akun Admin</label>
+            <select id="resetAccountUsername" style="width:100%;padding:11px;border:1px solid var(--border-color);border-radius:6px;margin-bottom:12px;">
+                <option value="bayua">Bayu A. (bayua)</option>
+                <option value="cyntiar">Cyntia R. (cyntiar)</option>
+                <option value="nuruls">Nurul S. (nuruls)</option>
+            </select>
+
+            <button id="btnResetAccountPassword" class="btn-archive" onclick="resetPasswordAkun()" style="width:100%;padding:11px;font-size:13px;">
+                Buat Password Baru
+            </button>
+            <div id="resetAccountMessage" style="font-size:12px;margin-top:10px;color:#718093;"></div>
+
+            <div id="resetAccountResult" style="display:none;margin-top:14px;padding:13px;border:1px solid #86b99b;background:#f0fdf4;border-radius:8px;">
+                <div style="font-size:12px;color:#166534;font-weight:bold;margin-bottom:5px;">Password baru berhasil dibuat</div>
+                <div id="resetAccountName" style="font-size:11px;color:#334155;margin-bottom:8px;"></div>
+                <input id="resetAccountPasswordValue" type="text" readonly autocomplete="off"
+                    style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #bbf7d0;border-radius:6px;background:white;font-family:monospace;font-weight:bold;font-size:15px;">
+                <button class="btn-archive" onclick="salinPasswordAkun()" style="width:100%;margin-top:8px;padding:9px;">
+                    Salin Password
+                </button>
+                <div style="font-size:10px;color:#166534;margin-top:8px;">
+                    Password hanya ditampilkan kali ini. Salin dan berikan secara pribadi kepada pemilik akun. Jangan tutup jendela sebelum disalin.
+                </div>
+            </div>
+
+            <div style="font-size:10px;color:#718093;margin-top:13px;border-top:1px solid #e2e8f0;padding-top:10px;">
+                Menu ini hanya mengatur password akun Bayu, Cyntia, dan Nurul. Akun Superuser Angger tidak dapat di-reset melalui menu ini.
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
