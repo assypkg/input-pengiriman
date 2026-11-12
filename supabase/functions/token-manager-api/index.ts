@@ -1,7 +1,5 @@
 // Superuser-only API for managing Firestore access_tokens.
 // Firebase service-account credentials and OAuth access tokens stay server-side.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://assypkg.github.io",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -10,6 +8,64 @@ const corsHeaders = {
 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: corsHeaders });
+
+const PASSWORD_SALT = Uint8Array.from([
+  0x9b, 0x67, 0x13, 0x76, 0x4a, 0x66, 0xc3, 0xab,
+  0x19, 0x19, 0xc1, 0x21, 0xec, 0xe2, 0xb8, 0x08,
+]);
+const PASSWORD_HASH = Uint8Array.from([
+  0x71, 0x48, 0xa5, 0x47, 0x82, 0x21, 0xd4, 0x8c,
+  0xeb, 0x7b, 0xc2, 0x1b, 0x26, 0x04, 0xe7, 0x0f,
+  0x96, 0xea, 0x49, 0x4b, 0x87, 0x3d, 0x1b, 0xa1,
+  0x40, 0x6e, 0xc2, 0xc9, 0x23, 0x52, 0x4c, 0xbd,
+]);
+const SESSION_SECONDS = 12 * 60 * 60;
+const encoder = new TextEncoder();
+
+function fromBase64url(value: string): Uint8Array {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a[i] ^ b[i];
+  return mismatch === 0;
+}
+async function derivePasswordHash(password: string): Promise<Uint8Array> {
+  const material = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt: PASSWORD_SALT, iterations: 600000 },
+    material,
+    256,
+  ));
+}
+async function hmacKey() {
+  return await crypto.subtle.importKey("raw", PASSWORD_HASH, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+async function createSessionToken(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = base64url(JSON.stringify({
+    sub: "internal-token-manager",
+    iat: now,
+    exp: now + SESSION_SECONDS,
+  }));
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(), encoder.encode(payload)));
+  return "tm1." + payload + "." + base64url(signature);
+}
+async function isValidSessionToken(token: string): Promise<boolean> {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts[0] !== "tm1") return false;
+    const payload = JSON.parse(new TextDecoder().decode(fromBase64url(parts[1])));
+    const now = Math.floor(Date.now() / 1000);
+    if (payload?.sub !== "internal-token-manager" || !Number.isInteger(payload.exp) || payload.exp <= now) return false;
+    return await crypto.subtle.verify("HMAC", await hmacKey(), fromBase64url(parts[2]), encoder.encode(parts[1]));
+  } catch {
+    return false;
+  }
+}
 
 function base64url(input: Uint8Array | string): string {
   const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
@@ -118,42 +174,32 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const body = await req.json();
+    const action = body?.action;
+
+    if (action === "login") {
+      const password = typeof body.password === "string" ? body.password : "";
+      if (!password || password.length > 200) return json({ error: "Password wajib diisi." }, 400);
+      const candidate = await derivePasswordHash(password);
+      if (!constantTimeEqual(candidate, PASSWORD_HASH)) {
+        return json({ error: "Password salah." }, 401);
+      }
+      return json({ success: true, session_token: await createSessionToken(), expires_in: SESSION_SECONDS });
+    }
+
+    if (!["list", "create", "update", "toggle", "reset", "delete"].includes(action)) {
+      return json({ error: "Aksi tidak dikenal." }, 400);
+    }
+
+    const bearer = req.headers.get("Authorization") || "";
+    const sessionToken = bearer.startsWith("Bearer ") ? bearer.slice(7) : "";
+    if (!sessionToken || !(await isValidSessionToken(sessionToken))) {
+      return json({ error: "Sesi berakhir atau tidak valid. Silakan masukkan password kembali." }, 401);
+    }
+
     const projectId = Deno.env.get("FIREBASE_PROJECT_ID") || "summarypengiriman";
     const serviceAccountRaw = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_JSON");
-    const bearer = req.headers.get("Authorization") || "";
-    const accessToken = bearer.startsWith("Bearer ") ? bearer.slice(7) : "";
-    if (!supabaseUrl || !anonKey || !serviceKey || !serviceAccountRaw) {
-      return json({ error: "Konfigurasi server belum lengkap." }, 500);
-    }
-    if (!accessToken) return json({ error: "Login superuser diperlukan." }, 401);
-
-    // Validate the exact bearer token explicitly; do not depend on implicit
-    // session/header state inside the Edge Function runtime.
-    const caller = createClient(supabaseUrl, anonKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const { data: authData, error: authError } = await caller.auth.getUser(accessToken);
-    if (authError || !authData.user) {
-      console.error("Superuser token validation failed", authError?.message || "No user returned");
-      return json({ error: "Sesi login tidak valid atau sudah kedaluwarsa. Silakan login ulang." }, 401);
-    }
-
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const { data: profile, error: profileError } = await admin
-      .from("assembly_users")
-      .select("username,role,is_active")
-      .eq("user_id", authData.user.id)
-      .maybeSingle();
-    if (profileError) return json({ error: "Gagal memeriksa hak akses." }, 503);
-    if (!profile || profile.is_active !== true || profile.role !== "superuser") {
-      return json({ error: "Hanya superuser aktif yang dapat mengelola token." }, 403);
-    }
-
+    if (!serviceAccountRaw) return json({ error: "Konfigurasi Firestore server belum lengkap." }, 500);
     const serviceAccount = JSON.parse(serviceAccountRaw);
     if (serviceAccount.project_id !== projectId || !serviceAccount.client_email || !serviceAccount.private_key) {
       return json({ error: "Konfigurasi Firebase service account tidak sesuai." }, 500);
@@ -177,12 +223,6 @@ Deno.serve(async (req: Request) => {
       } while (pageToken);
       return all;
     };
-
-    const body = await req.json();
-    const action = body?.action;
-    if (!["list", "create", "update", "toggle", "reset", "delete"].includes(action)) {
-      return json({ error: "Aksi tidak dikenal." }, 400);
-    }
 
     if (action === "list") return json({ success: true, tokens: await readCollection() });
 
