@@ -1,0 +1,7 @@
+project_id = "wcsjjdzxnwhzqkqninky"
+
+[functions.username-login]
+verify_jwt = false
+
+[functions.archive-closed-deliveries]
+verify_jwt = false
