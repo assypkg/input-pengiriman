@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - jo-closed-supabase-storage
+      - superuser-account-management
       - main
     paths:
       - "supabase/functions/username-login/**"
