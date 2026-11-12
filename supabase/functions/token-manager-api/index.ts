@@ -44,6 +44,20 @@ function base64url(input: Uint8Array | string): string {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
+function parseServiceAccountSecret(raw: string): any {
+  const trimmed = raw.trim();
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace < 0 || lastBrace <= firstBrace) {
+    throw new Error("Konfigurasi Firebase belum berupa JSON service account yang valid.");
+  }
+  try {
+    return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+  } catch {
+    throw new Error("Format FIREBASE_SERVICE_ACCOUNT_JSON tidak valid. Gunakan isi JSON service account asli, bukan script Admin SDK.");
+  }
+}
+
 function pemToDer(pem: string): ArrayBuffer {
   const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
   const binary = atob(clean);
@@ -168,7 +182,7 @@ Deno.serve(async (req: Request) => {
     const projectId = Deno.env.get("FIREBASE_PROJECT_ID") || "summarypengiriman";
     const serviceAccountRaw = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_JSON");
     if (!serviceAccountRaw) return json({ error: "Konfigurasi Firestore server belum lengkap." }, 500);
-    const serviceAccount = JSON.parse(serviceAccountRaw);
+    const serviceAccount = parseServiceAccountSecret(serviceAccountRaw);
     if (serviceAccount.project_id !== projectId || !serviceAccount.client_email || !serviceAccount.private_key) {
       return json({ error: "Konfigurasi Firebase service account tidak sesuai." }, 500);
     }
