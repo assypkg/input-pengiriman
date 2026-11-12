@@ -174,7 +174,7 @@ async function listArchives(context: { url: string; serviceKey: string }) {
   for (let i = 0; i < files.length; i += 20) {
     const group = files.slice(i, i + 20);
     const results = await Promise.all(group.map(async (file: any) => {
-      const path = PREFIX + file.name;
+      const path = file.name.startsWith(PREFIX) ? file.name : PREFIX + file.name;
       const envelope = await getStoredRecord(context, path);
       if (!envelope || envelope.archiveState === "RESTORED" || !envelope.record) return null;
       return {
