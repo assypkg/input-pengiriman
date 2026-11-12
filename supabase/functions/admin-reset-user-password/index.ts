@@ -108,7 +108,7 @@ Deno.serve(async (req: Request) => {
         const updateAuth = await fetch(supabaseUrl + "/auth/v1/admin/users/" + encodeURIComponent(authTarget.id), {
           method: "PUT",
           headers: adminHeaders,
-          body: JSON.stringify({ password: temporaryPassword }),
+          body: JSON.stringify({ password: newPassword }),
         });
         if (!updateAuth.ok) return json({ success: false, error: "Password akun autentikasi gagal diperbarui." }, 503);
       }
@@ -153,7 +153,7 @@ Deno.serve(async (req: Request) => {
           Authorization: "Bearer " + serviceKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ password: temporaryPassword }),
+        body: JSON.stringify({ password: newPassword }),
       },
     );
     if (!updateResponse.ok) {
@@ -167,7 +167,7 @@ Deno.serve(async (req: Request) => {
       success: true,
       username,
       full_name: target.full_name || fullName,
-      temporary_password: temporaryPassword,
+      temporary_password: newPassword,
       message: "Password berhasil diperbarui.",
     });
   } catch (error) {
