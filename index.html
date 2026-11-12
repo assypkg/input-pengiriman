@@ -276,6 +276,18 @@
         .status-open { color: var(--danger); font-weight: bold; display: inline-flex; align-items: center; gap: 4px; }
         .sisa-open { color: var(--danger) !important; font-weight: bold !important; }
 
+        .btn-archive { background: #0f766e; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 12px; }
+        .btn-archive:hover { background: #115e59; }
+        .btn-archive-view { background: #2563eb; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 12px; }
+        .archive-count { display: inline-block; min-width: 20px; margin-left: 4px; padding: 2px 6px; border-radius: 10px; background: rgba(255,255,255,.22); font-size: 10px; }
+        .archive-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+        .archive-toolbar input { flex: 1; min-width: 220px; }
+        .archive-table-wrap { width: 100%; max-height: 58vh; overflow: auto; border: 1px solid var(--border-color); border-radius: 7px; }
+        .archive-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+        .archive-table th, .archive-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+        .archive-table th { position: sticky; top: 0; background: var(--primary); color: white; z-index: 2; }
+        .btn-restore-archive { background: #0f766e; padding: 5px 9px; font-size: 10px; }
+
         #pdfContainer { display: none; }
 
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; padding: 15px; box-sizing: border-box; }
@@ -510,9 +522,13 @@
             </div>
         </div>
         
-        <div style="overflow: hidden; margin-top: 15px;">
-            <h3 style="float: left; margin: 0; color: #333; font-size: 15px;">Database Pengiriman (Cloud Real-Time)</h3>
-            <button class="btn-clear" onclick="hapusSemuaData()">Hapus Semua Data</button>
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-top:15px;">
+            <h3 style="margin:0;color:#333;font-size:15px;">Database Pengiriman (Cloud Real-Time)</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn-archive" onclick="arsipkanSemuaClosed()">Arsipkan JO CLOSED</button>
+                <button class="btn-archive-view" onclick="bukaArsipJO()">Arsip JO <span id="archiveCountBadge" class="archive-count">0</span></button>
+                <button class="btn-clear" onclick="hapusSemuaData()">Hapus Semua Data</button>
+            </div>
         </div>
 
         <!-- PANEL FILTER & PENCARIAN -->
@@ -549,6 +565,35 @@
         <div class="mobile-card-container" id="mobileCardContainer"></div>
 
         <div id="pdfContainer"></div>
+    </div>
+
+    <!-- Modal Arsip Job Order CLOSED -->
+    <div id="arsipJOModal" class="modal">
+        <div class="modal-content" style="width:1100px;max-width:98%;max-height:92vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:2px solid var(--primary);padding-bottom:10px;margin-bottom:12px;">
+                <div>
+                    <h3 style="margin:0;color:var(--primary);border:0;padding:0;">Arsip JO CLOSED</h3>
+                    <div id="archiveCountText" style="font-size:11px;color:#718093;margin-top:4px;">0 baris diarsipkan</div>
+                </div>
+                <button class="btn-cancel-modal" onclick="tutupArsipJO()" style="flex:none;padding:7px 12px;">Tutup</button>
+            </div>
+            <div class="archive-toolbar">
+                <input type="text" id="searchArsipJO" class="search-box" placeholder="Cari JO, PO#, kode item, atau nama produk..." oninput="renderArsipJO()">
+                <button class="btn-restore-archive" onclick="downloadBackupArsip()">Unduh Arsip JSON</button>
+            </div>
+            <div class="archive-table-wrap">
+                <table class="archive-table">
+                    <thead>
+                        <tr>
+                            <th>Tanggal Kirim</th><th>Job Order</th><th>PO#</th><th>Kode Item</th>
+                            <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Tanggal Arsip</th><th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="archiveTableBody"></tbody>
+                </table>
+            </div>
+            <div style="font-size:10px;color:#718093;margin-top:8px;">Arsip menyimpan baris pengiriman CLOSED. Data asli dan ID dokumen Firestore tetap dipertahankan.</div>
+        </div>
     </div>
 
     <!-- Modal Detail Tanggal Pengiriman -->
@@ -997,10 +1042,11 @@
 
         function updateGlobalKPI() {
             let totalOrder = 0, totalHasil = 0;
-            database.forEach(item => {
+            database.filter(item => item && item.isArchived !== true).forEach(item => {
                 totalOrder += parseInt(item.order) || 0;
                 totalHasil += parseInt(item.hasil) || 0;
             });
+            updateArchiveCount();
             let progress = totalOrder > 0 ? Math.round((totalHasil / totalOrder) * 100) : 0;
             
             let kpiOrder = document.getElementById('kpiTotalOrder');
@@ -1238,7 +1284,7 @@
                 let sortMode = elSort ? elSort.value : "produk_open_closed";
                 
                 let filteredData = database.filter(item => {
-                    if (!item) return false;
+                    if (!item || item.isArchived === true) return false;
                     let poVal = String(item.poNum || '');
                     let joVal = String(item.jobOrder || '');
                     let kodeVal = String(item.kodeItem || '');
@@ -1439,7 +1485,7 @@
                 tbody.innerHTML = '';
 
                 let summaryMap = {};
-                database.forEach(item => {
+                database.filter(item => item && item.isArchived !== true).forEach(item => {
                     let tgl = String(item.tanggal || 'Tanpa Tanggal');
                     if (!summaryMap[tgl]) {
                         summaryMap[tgl] = { total: 0, closed: 0, open: 0 };
@@ -1509,7 +1555,7 @@
             if (!tbody) return;
             tbody.innerHTML = '';
 
-            let dataTanggal = database.filter(item => item.tanggal === tglStr);
+            let dataTanggal = database.filter(item => item && item.isArchived !== true && item.tanggal === tglStr);
             dataTanggal.sort((a, b) => parseInt(b.sisa || 0) - parseInt(a.sisa || 0)); 
 
             dataTanggal.forEach(item => {
@@ -1601,6 +1647,161 @@
                     alert("Database berhasil dikosongkan.");
                 } catch (error) { alert("Gagal menghapus."); }
             } else if (passInput !== null) { alert("Kata sandi salah!"); }
+        };
+
+
+        // --- ARSIP JO CLOSED: penanda pada dokumen asli, tanpa memindahkan/menghapus dokumen ---
+        function nilaiSisaArsip(item) {
+            if (item?.sisa !== undefined && item?.sisa !== null && String(item.sisa).trim() !== "") {
+                const value = Number(item.sisa);
+                return Number.isFinite(value) ? value : NaN;
+            }
+            const order = Number(item?.order), hasil = Number(item?.hasil);
+            return Number.isFinite(order) && Number.isFinite(hasil) ? order - hasil : NaN;
+        }
+        function isClosedForArchive(item) {
+            const sisa = nilaiSisaArsip(item);
+            return !!item && Number.isFinite(sisa) && sisa <= 0;
+        }
+        function updateArchiveCount() {
+            const count = database.filter(item => item && item.isArchived === true).length;
+            const pending = database.filter(item => item && item.isArchived !== true && isClosedForArchive(item)).length;
+            const badge = document.getElementById("archiveCountBadge");
+            if (badge) badge.textContent = String(count);
+            const button = document.querySelector(".btn-archive");
+            if (button) button.textContent = pending > 0 ? "Arsipkan JO CLOSED (" + pending.toLocaleString("id-ID") + ")" : "Arsipkan JO CLOSED";
+            const label = document.getElementById("archiveCountText");
+            if (label) label.textContent = count.toLocaleString("id-ID") + " baris sudah diarsipkan";
+        }
+
+        window.arsipkanSemuaClosed = async function() {
+            const targets = database.filter(item => item && item.isArchived !== true && item.docId && isClosedForArchive(item));
+            if (!targets.length) {
+                alert("Tidak ada baris pengiriman CLOSED yang perlu diarsipkan.");
+                return;
+            }
+            if (!confirm(
+                "Arsipkan " + targets.length.toLocaleString("id-ID") + " baris pengiriman CLOSED?\\n\\n" +
+                "Data tidak dihapus. Dokumen dan ID asli tetap berada di production_data_v2; hanya diberi penanda arsip.\\n\\n" +
+                "Proses per baris pengiriman, bukan per kode JO, agar baris JO yang masih OPEN tidak ikut terarsip."
+            )) return;
+
+            const button = document.querySelector(".btn-archive");
+            const original = button ? button.textContent : "";
+            if (button) { button.disabled = true; button.textContent = "Mengarsipkan..."; }
+            try {
+                const { doc, writeBatch, serverTimestamp } = window.fbModules;
+                let total = 0;
+                for (let i = 0; i < targets.length; i += 400) {
+                    const batch = writeBatch(window.db);
+                    targets.slice(i, i + 400).forEach(item => {
+                        batch.update(doc(window.db, "production_data_v2", item.docId), {
+                            isArchived: true,
+                            archivedAt: serverTimestamp(),
+                            archivedBy: currentUser || "Admin",
+                            archiveStatus: "CLOSED"
+                        });
+                    });
+                    await batch.commit();
+                    total += Math.min(400, targets.length - i);
+                }
+                await catatLogAktivitas("Arsip JO CLOSED: " + total.toLocaleString("id-ID") + " baris pengiriman diarsipkan.");
+                alert(total.toLocaleString("id-ID") + " baris CLOSED berhasil diarsipkan. Dokumen asli tetap tersimpan.");
+                renderTabel();
+                updateGlobalKPI();
+                if (document.getElementById("arsipJOModal")?.style.display === "flex") renderArsipJO();
+            } catch (error) {
+                console.error("Gagal mengarsipkan JO CLOSED:", error);
+                alert("Pengarsipan gagal. Data tidak dihapus. Periksa koneksi dan izin Firestore.");
+            } finally {
+                if (button) { button.disabled = false; button.textContent = original; }
+                updateArchiveCount();
+            }
+        };
+
+        window.bukaArsipJO = function() {
+            const search = document.getElementById("searchArsipJO");
+            if (search) search.value = "";
+            renderArsipJO();
+            const modal = document.getElementById("arsipJOModal");
+            if (modal) modal.style.display = "flex";
+        };
+        window.tutupArsipJO = function() {
+            const modal = document.getElementById("arsipJOModal");
+            if (modal) modal.style.display = "none";
+        };
+        window.renderArsipJO = function() {
+            const body = document.getElementById("archiveTableBody");
+            if (!body) return;
+            const keyword = String(document.getElementById("searchArsipJO")?.value || "").trim().toLowerCase();
+            const rows = database.filter(item => item && item.isArchived === true).filter(item => {
+                const haystack = [item.jobOrder, item.poNum, item.kodeItem, item.produk, item.tanggal]
+                    .map(value => String(value || "").toLowerCase()).join(" ");
+                return haystack.includes(keyword);
+            }).sort((a, b) => {
+                const millis = value => value?.toDate ? value.toDate().getTime() : (value ? new Date(value).getTime() : 0);
+                return millis(b.archivedAt) - millis(a.archivedAt);
+            });
+            updateArchiveCount();
+            body.innerHTML = "";
+            if (!rows.length) {
+                const tr = document.createElement("tr"), td = document.createElement("td");
+                td.colSpan = 10; td.style.textAlign = "center"; td.style.padding = "18px";
+                td.style.color = "#718093";
+                td.textContent = keyword ? "Arsip tidak ditemukan." : "Belum ada JO CLOSED yang diarsipkan.";
+                tr.appendChild(td); body.appendChild(tr); return;
+            }
+            rows.forEach(item => {
+                const tr = document.createElement("tr");
+                const archivedAt = item.archivedAt?.toDate
+                    ? item.archivedAt.toDate().toLocaleString("id-ID")
+                    : (item.archivedAt ? String(item.archivedAt) : "-");
+                [
+                    formatTanggalID(item.tanggal), item.jobOrder || "-", item.poNum || "-",
+                    item.kodeItem || "-", item.produk || "-",
+                    Number(item.order || 0).toLocaleString("id-ID"),
+                    Number(item.hasil || 0).toLocaleString("id-ID"),
+                    Number(nilaiSisaArsip(item) || 0).toLocaleString("id-ID"),
+                    archivedAt
+                ].forEach(value => {
+                    const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
+                });
+                const action = document.createElement("td");
+                const restore = document.createElement("button");
+                restore.className = "btn-restore-archive"; restore.textContent = "Pulihkan";
+                restore.addEventListener("click", () => pulihkanJO(item.docId));
+                action.appendChild(restore); tr.appendChild(action); body.appendChild(tr);
+            });
+        };
+        window.pulihkanJO = async function(docId) {
+            const item = database.find(row => row && row.docId === docId && row.isArchived === true);
+            if (!item) return;
+            if (!confirm("Pulihkan JO " + (item.jobOrder || "") + " ke daftar pengiriman aktif?")) return;
+            try {
+                const { doc, updateDoc, serverTimestamp } = window.fbModules;
+                await updateDoc(doc(window.db, "production_data_v2", docId), {
+                    isArchived: false,
+                    restoredAt: serverTimestamp(),
+                    restoredBy: currentUser || "Admin"
+                });
+                await catatLogAktivitas("Pemulihan arsip JO: " + (item.jobOrder || docId) + ".");
+                alert("Data berhasil dipulihkan ke daftar aktif.");
+                renderArsipJO(); renderTabel(); updateGlobalKPI();
+            } catch (error) {
+                console.error("Gagal memulihkan arsip JO:", error);
+                alert("Data arsip gagal dipulihkan.");
+            }
+        };
+        window.downloadBackupArsip = function() {
+            const rows = database.filter(item => item && item.isArchived === true);
+            if (!rows.length) { alert("Belum ada data arsip."); return; }
+            const payload = { type: "arsip-jo-closed", exportedAt: new Date().toISOString(), total: rows.length, records: rows };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "Arsip_JO_Closed_" + new Date().toISOString().slice(0, 10) + ".json";
+            document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
         };
 
         window.cetakPDF = function() { window.print(); };
