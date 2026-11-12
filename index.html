@@ -1800,12 +1800,19 @@
             if (button) { button.disabled = true; button.textContent = "Menyimpan ke Supabase..."; }
 
             try {
-                const result = await callArchiveApi({
-                    action: "archive",
-                    records: targets.map(item => ({ sourceDocId: item.docId, data: item }))
-                });
-                const archivedIds = new Set((result.archived || []).map(item => item.sourceDocId));
-                const alreadyIds = new Set((result.alreadyArchived || []).map(item => item.sourceDocId));
+                const archivedRows = [];
+                const alreadyRows = [];
+                for (let i = 0; i < targets.length; i += 400) {
+                    const group = targets.slice(i, i + 400);
+                    const result = await callArchiveApi({
+                        action: "archive",
+                        records: group.map(item => ({ sourceDocId: item.docId, data: item }))
+                    });
+                    archivedRows.push(...(result.archived || []));
+                    alreadyRows.push(...(result.alreadyArchived || []));
+                }
+                const archivedIds = new Set(archivedRows.map(item => item.sourceDocId));
+                const alreadyIds = new Set(alreadyRows.map(item => item.sourceDocId));
                 const idsToMark = [...new Set([...archivedIds, ...alreadyIds])];
 
                 if (idsToMark.length) {
@@ -1828,10 +1835,10 @@
                 await loadArchivesFromSupabase();
                 await catatLogAktivitas("Arsip JO CLOSED ke Supabase: " +
                     idsToMark.length.toLocaleString("id-ID") + " baris.");
-                alert((result.archived || []).length.toLocaleString("id-ID") +
+                alert(archivedRows.length.toLocaleString("id-ID") +
                     " baris baru berhasil disimpan ke Supabase." +
-                    ((result.alreadyArchived || []).length
-                        ? "\\n" + result.alreadyArchived.length.toLocaleString("id-ID") + " baris sudah ada di arsip."
+                    (alreadyRows.length
+                        ? "\\n" + alreadyRows.length.toLocaleString("id-ID") + " baris sudah ada di arsip."
                         : ""));
                 renderTabel();
                 updateGlobalKPI();
