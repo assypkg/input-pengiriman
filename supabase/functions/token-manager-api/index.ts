@@ -19,52 +19,23 @@ const PASSWORD_HASH = Uint8Array.from([
   0x96, 0xea, 0x49, 0x4b, 0x87, 0x3d, 0x1b, 0xa1,
   0x40, 0x6e, 0xc2, 0xc9, 0x23, 0x52, 0x4c, 0xbd,
 ]);
-const SESSION_SECONDS = 12 * 60 * 60;
 const encoder = new TextEncoder();
 
-function fromBase64url(value: string): Uint8Array {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
-  const binary = atob(padded);
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
 function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   let mismatch = 0;
   for (let i = 0; i < a.length; i++) mismatch |= a[i] ^ b[i];
   return mismatch === 0;
 }
-async function derivePasswordHash(password: string): Promise<Uint8Array> {
+async function isValidInternalPassword(password: string): Promise<boolean> {
+  if (!password || password.length > 200) return false;
   const material = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
-  return new Uint8Array(await crypto.subtle.deriveBits(
+  const candidate = new Uint8Array(await crypto.subtle.deriveBits(
     { name: "PBKDF2", hash: "SHA-256", salt: PASSWORD_SALT, iterations: 600000 },
     material,
     256,
   ));
-}
-async function hmacKey() {
-  return await crypto.subtle.importKey("raw", PASSWORD_HASH, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
-}
-async function createSessionToken(): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const payload = base64url(JSON.stringify({
-    sub: "internal-token-manager",
-    iat: now,
-    exp: now + SESSION_SECONDS,
-  }));
-  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(), encoder.encode(payload)));
-  return "tm1." + payload + "." + base64url(signature);
-}
-async function isValidSessionToken(token: string): Promise<boolean> {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3 || parts[0] !== "tm1") return false;
-    const payload = JSON.parse(new TextDecoder().decode(fromBase64url(parts[1])));
-    const now = Math.floor(Date.now() / 1000);
-    if (payload?.sub !== "internal-token-manager" || !Number.isInteger(payload.exp) || payload.exp <= now) return false;
-    return await crypto.subtle.verify("HMAC", await hmacKey(), fromBase64url(parts[2]), encoder.encode(parts[1]));
-  } catch {
-    return false;
-  }
+  return constantTimeEqual(candidate, PASSWORD_HASH);
 }
 
 function base64url(input: Uint8Array | string): string {
@@ -180,11 +151,8 @@ Deno.serve(async (req: Request) => {
     if (action === "login") {
       const password = typeof body.password === "string" ? body.password : "";
       if (!password || password.length > 200) return json({ error: "Password wajib diisi." }, 400);
-      const candidate = await derivePasswordHash(password);
-      if (!constantTimeEqual(candidate, PASSWORD_HASH)) {
-        return json({ error: "Password salah." }, 401);
-      }
-      return json({ success: true, session_token: await createSessionToken(), expires_in: SESSION_SECONDS });
+      if (!(await isValidInternalPassword(password))) return json({ error: "Password salah." }, 401);
+      return json({ success: true });
     }
 
     if (!["list", "create", "update", "toggle", "reset", "delete"].includes(action)) {
@@ -192,9 +160,9 @@ Deno.serve(async (req: Request) => {
     }
 
     const bearer = req.headers.get("Authorization") || "";
-    const sessionToken = bearer.startsWith("Bearer ") ? bearer.slice(7) : "";
-    if (!sessionToken || !(await isValidSessionToken(sessionToken))) {
-      return json({ error: "Sesi berakhir atau tidak valid. Silakan masukkan password kembali." }, 401);
+    const internalPassword = bearer.startsWith("Bearer ") ? bearer.slice(7) : "";
+    if (!internalPassword || !(await isValidInternalPassword(internalPassword))) {
+      return json({ error: "Password salah atau sesi tidak valid. Silakan login kembali." }, 401);
     }
 
     const projectId = Deno.env.get("FIREBASE_PROJECT_ID") || "summarypengiriman";
