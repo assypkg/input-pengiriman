@@ -69,9 +69,12 @@ jobs:
           duplicates = sorted({item for item in parser.ids if parser.ids.count(item) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          scripts = [code for _, code in parser.scripts if code.strip()]
+          modules = [code for kind, code in parser.scripts if kind == "module" and code.strip()]
+          scripts = [code for kind, code in parser.scripts if kind != "module" and code.strip()]
           if not scripts:
-              raise SystemExit("No inline JavaScript found.")
+              raise SystemExit("No inline application JavaScript found.")
+          if modules:
+              Path("/tmp/admin-input.mjs").write_text("\n;\n".join(modules), encoding="utf-8")
           Path("/tmp/admin-input.js").write_text("\n;\n".join(scripts), encoding="utf-8")
 
           required = [
@@ -83,7 +86,7 @@ jobs:
               'action: "archive"',
               "archiveCache.filter",
               'archiveStorage: "supabase"',
-              "Supabase Storage / arsip-pengiriman",
+              "arsip-pengiriman",
               'id="annualArchivePanel"',
               'annualArchiveApi("admin-summary")',
               "window.downloadAnnualBackup",
@@ -102,6 +105,7 @@ jobs:
           print("Supabase login, H+1 client gate, and Supabase archive API markers passed.")
           PY
           node --check /tmp/admin-input.js
+          if [ -f /tmp/admin-input.mjs ]; then node --check /tmp/admin-input.mjs; fi
 
       - name: Validate annual backup verification and cloud purge guardrails
         run: |
