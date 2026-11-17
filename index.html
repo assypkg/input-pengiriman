@@ -2666,11 +2666,46 @@
                     }
                     seenIds.add(id);
                 }
+                const localTotals = {
+                    totalRecords: backup.records.length,
+                    totalOrder: 0,
+                    totalHasil: 0,
+                    totalSisa: 0,
+                    totalJO: 0,
+                    closedJO: 0,
+                    openJO: 0
+                };
+                const localJobs = new Map();
+                for (const record of backup.records) {
+                    const order = Number(record.order || 0);
+                    const hasil = Number(record.hasil || 0);
+                    const sisa = Number(record.sisa ?? (order - hasil));
+                    if (![order, hasil, sisa].every(Number.isFinite)) {
+                        throw new Error("Ada angka Order, Hasil, atau Sisa yang tidak valid pada file backup.");
+                    }
+                    localTotals.totalOrder += order;
+                    localTotals.totalHasil += hasil;
+                    localTotals.totalSisa += sisa;
+                    const jobKey = String(record.jobOrder || record.docId);
+                    if (!localJobs.has(jobKey)) localJobs.set(jobKey, { open: false });
+                    if (sisa > 0) localJobs.get(jobKey).open = true;
+                }
+                localTotals.totalJO = localJobs.size;
+                localJobs.forEach(job => job.open ? localTotals.openJO++ : localTotals.closedJO++);
+                for (const field of ["totalRecords", "totalOrder", "totalHasil", "totalSisa", "totalJO", "closedJO", "openJO"]) {
+                    const expected = Number(backup.summary?.[field]);
+                    if (!Number.isFinite(expected) || Math.abs(localTotals[field] - expected) > 0.000001) {
+                        throw new Error("Total " + field + " pada isi backup tidak cocok dengan ringkasan file.");
+                    }
+                }
+                if (localTotals.openJO !== 0 || localTotals.closedJO !== localTotals.totalJO) {
+                    throw new Error("Masih ada JO OPEN di dalam file backup.");
+                }
                 const localHash = await sha256AnnualRecords(backup.records);
                 if (localHash !== String(backup.integrity.recordsSha256 || "").toLowerCase()) {
                     throw new Error("Checksum file JSON tidak cocok. File mungkin berubah atau rusak.");
                 }
-                if (message) message.textContent = "Checksum lokal valid. Mencocokkan kembali dengan seluruh data cloud...";
+                if (message) message.textContent = "Jumlah data, total, dan checksum lokal valid. Mencocokkan kembali dengan seluruh data cloud...";
                 const result = await annualArchiveApi("verify", {
                     year,
                     recordsSha256: localHash,
