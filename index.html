@@ -296,6 +296,22 @@
         .archive-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
         .archive-table th, .archive-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
         .archive-table th { position: sticky; top: 0; background: var(--primary); color: white; z-index: 2; }
+        .archive-page-view { display:none; min-height:100vh; box-sizing:border-box; padding:12px; background:#f4f7f6; }
+        .archive-page-content { width:100%; max-width:1250px; min-height:calc(100vh - 24px); margin:0 auto; padding:0; box-sizing:border-box; }
+        .archive-page-header { position:sticky; top:0; z-index:20; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 14px; margin-bottom:10px; border:1px solid #dbe3ee; border-radius:10px; background:#fff; box-shadow:0 2px 7px rgba(15,23,42,.05); }
+        .archive-page-title { margin:0; padding:0; border:0; color:#203764; font-size:18px; }
+        .archive-page-count { margin-top:3px; color:#64748b; font-size:11px; }
+        .archive-back-button { min-height:40px; padding:9px 14px; border:0; border-radius:7px; background:#203764; color:#fff; font-size:12px; font-weight:750; cursor:pointer; }
+        body.archive-page-active { padding:0; background:#f4f7f6; }
+        body.archive-page-active #mainDashboard { display:none !important; }
+        body.archive-page-active #arsipJOModal { display:block !important; }
+        @media (max-width:850px) {
+            .archive-page-view { padding:7px; }
+            .archive-page-content { min-height:calc(100vh - 14px); }
+            .archive-page-header { top:0; padding:9px 10px; margin-bottom:8px; border-radius:8px; }
+            .archive-page-title { font-size:16px; }
+            .archive-back-button { min-height:35px; padding:7px 10px; font-size:11px; }
+        }
         .archive-mobile-cards { display:none; }
         .archive-mobile-card { min-width:0; padding:15px; border:1px solid #dbe3ee; border-left:5px solid #27ae60; border-radius:11px; background:#fff; box-shadow:0 2px 8px rgba(15,23,42,.05); }
         .archive-mobile-card-head { display:flex; justify-content:space-between; align-items:center; gap:10px; padding-bottom:10px; border-bottom:1px solid #e8edf4; }
@@ -330,6 +346,44 @@
             #archiveDataTabPane #archiveExportFilterInfo,
             #archiveDataTabPane #archiveAuditResult { flex:0 0 auto; }
         }
+        @media (max-width:850px) {
+            .archive-page-view { padding:5px; }
+            .archive-page-header { padding:7px 9px; margin-bottom:6px; }
+            .archive-page-title { font-size:15px; }
+            .archive-page-count { font-size:10px; }
+            .archive-back-button { min-height:32px; padding:6px 9px; font-size:10px; }
+            #archiveDataTabPane .archive-tabs { margin-bottom:7px; }
+            #archiveDataTabPane .archive-export-toolbar { gap:5px; margin-bottom:6px; }
+            #archiveDataTabPane .archive-export-toolbar input { min-height:34px; padding:7px 9px; font-size:11px; }
+            #archiveDataTabPane .archive-date-filter label { font-size:9px; }
+            #archiveDataTabPane .archive-export-toolbar > button { min-height:34px; padding:6px 7px !important; font-size:10px !important; }
+            #archiveExportFilterInfo { margin:0 0 5px !important; font-size:9px !important; }
+            .archive-mobile-cards { gap:6px; padding:0 1px 8px; }
+            .archive-mobile-card { padding:7px 9px; border-radius:7px; border-left-width:3px; box-shadow:0 1px 3px rgba(15,23,42,.035); }
+            .archive-mobile-card-head { gap:7px; padding-bottom:4px; }
+            .archive-mobile-jo-label { font-size:8px; }
+            .archive-mobile-jo { margin-top:1px; font-size:11px; line-height:1.2; }
+            .archive-mobile-status { padding:3px 6px; font-size:8px; }
+            .archive-mobile-product { margin:4px 0 0; font-size:10px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            .archive-mobile-code { margin:1px 0 4px; font-size:8px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            .archive-mobile-qty-grid { gap:4px; margin-bottom:4px; }
+            .archive-mobile-qty { padding:4px 6px; border-radius:5px; }
+            .archive-mobile-qty span { font-size:7px; }
+            .archive-mobile-qty strong { margin-top:2px; font-size:10px; line-height:1.1; }
+            .archive-mobile-details { gap:3px 8px; padding-top:4px; }
+            .archive-mobile-detail span { margin-bottom:1px; font-size:7px; }
+            .archive-mobile-detail strong { font-size:8px; line-height:1.2; }
+            .archive-mobile-detail.is-note strong { padding:3px 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            .archive-mobile-restore { min-height:27px; margin-top:5px; padding:4px 8px; font-size:9px; }
+        }
+        @media (max-width:380px) {
+            .archive-mobile-card { padding:6px 7px; }
+            .archive-mobile-qty { padding:3px 4px; }
+            .archive-mobile-qty strong { font-size:9px; }
+            .archive-mobile-detail strong { font-size:7px; }
+            .archive-mobile-restore { min-height:25px; }
+        }
+
         @media (max-width:380px) {
             .archive-mobile-card { padding:12px; }
             .archive-mobile-qty-grid { gap:5px; }
@@ -484,7 +538,7 @@
         </div>
     </div>
 
-    <div class="container">
+    <div class="container" id="mainDashboard">
         <h2>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
             Laporan Harian: Pengiriman Assembly
@@ -682,16 +736,16 @@
         <div id="pdfContainer"></div>
     </div>
 
-    <!-- Modal Arsip Job Order CLOSED -->
-    <div id="arsipJOModal" class="modal">
-        <div class="modal-content" style="width:1100px;max-width:98%;max-height:92vh;">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:2px solid var(--primary);padding-bottom:10px;margin-bottom:12px;">
+    <!-- Halaman khusus Arsip Job Order CLOSED -->
+    <section id="arsipJOModal" class="archive-page-view" aria-label="Arsip JO CLOSED">
+        <div class="archive-page-content">
+            <header class="archive-page-header">
                 <div>
-                    <h3 style="margin:0;color:var(--primary);border:0;padding:0;">Arsip JO CLOSED</h3>
-                    <div id="archiveCountText" style="font-size:11px;color:#718093;margin-top:4px;">0 baris diarsipkan</div>
+                    <h2 class="archive-page-title">Arsip JO CLOSED</h2>
+                    <div id="archiveCountText" class="archive-page-count">0 baris diarsipkan</div>
                 </div>
-                <button class="btn-cancel-modal" onclick="tutupArsipJO()" style="flex:none;padding:7px 12px;">Tutup</button>
-            </div>
+                <button class="archive-back-button" onclick="tutupArsipJO()">← Kembali ke Dashboard</button>
+            </header>
             <section id="annualArchiveTabPane" class="archive-tab-pane" style="display:none;">
             <div class="summary-box annual-archive-panel" id="annualArchivePanel">
                 <div class="annual-year-header">
@@ -775,7 +829,7 @@
             <div style="font-size:10px;color:#718093;margin-top:8px;">Arsip menyimpan baris pengiriman CLOSED. Data asli dan ID dokumen Firestore tetap dipertahankan.</div>
             </section>
         </div>
-    </div>
+    </section>
 
     <!-- Modal Detail Tanggal Pengiriman -->
     <div id="detailTanggalModal" class="modal">
@@ -2262,16 +2316,24 @@
             if (search) search.value = "";
             if (fromDate) fromDate.value = "";
             if (toDate) toDate.value = "";
-            const modal = document.getElementById("arsipJOModal");
-            if (modal) modal.style.display = "flex";
+            const page = document.getElementById("arsipJOModal");
+            const dashboard = document.getElementById("mainDashboard");
+            if (dashboard) dashboard.style.display = "none";
+            if (page) page.style.display = "block";
+            document.body.classList.add("archive-page-active");
+            window.scrollTo(0, 0);
             window.pilihTabArsipJO("data");
             await loadArchivesFromSupabase();
             renderArsipJO();
         };
 
         window.tutupArsipJO = function() {
-            const modal = document.getElementById("arsipJOModal");
-            if (modal) modal.style.display = "none";
+            const page = document.getElementById("arsipJOModal");
+            const dashboard = document.getElementById("mainDashboard");
+            if (page) page.style.display = "none";
+            if (dashboard) dashboard.style.display = "";
+            document.body.classList.remove("archive-page-active");
+            window.scrollTo(0, 0);
         };
 
         function tanggalArsipWIB(value) {
