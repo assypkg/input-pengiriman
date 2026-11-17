@@ -282,6 +282,16 @@
         .archive-count { display: inline-block; min-width: 20px; margin-left: 4px; padding: 2px 6px; border-radius: 10px; background: rgba(255,255,255,.22); font-size: 10px; }
         .archive-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
         .archive-toolbar input { flex: 1; min-width: 220px; }
+        .archive-export-toolbar { display: grid; grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 1fr) minmax(150px, 1fr) auto auto; align-items: end; }
+        .archive-export-toolbar > input { width: 100%; box-sizing: border-box; }
+        .archive-date-filter { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .archive-date-filter label { font-size: 10px; font-weight: 700; color: #64748b; }
+        .archive-date-filter input { width: 100%; min-width: 0; box-sizing: border-box; }
+        @media (max-width: 850px) {
+            .archive-export-toolbar { grid-template-columns: 1fr 1fr; }
+            .archive-export-toolbar > input { grid-column: 1 / -1; }
+            .archive-export-toolbar > button { width: 100%; }
+        }
         .archive-table-wrap { width: 100%; max-height: 58vh; overflow: auto; border: 1px solid var(--border-color); border-radius: 7px; }
         .archive-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
         .archive-table th, .archive-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
@@ -582,10 +592,20 @@
                 </div>
                 <button class="btn-cancel-modal" onclick="tutupArsipJO()" style="flex:none;padding:7px 12px;">Tutup</button>
             </div>
-            <div class="archive-toolbar">
-                <input type="text" id="searchArsipJO" class="search-box" placeholder="Cari JO, PO#, kode item, atau nama produk..." oninput="renderArsipJO()">
-                <button class="btn-restore-archive" onclick="downloadBackupArsip()">Unduh Arsip JSON</button>
+            <div class="archive-toolbar archive-export-toolbar">
+                <input type="text" id="searchArsipJO" class="search-box" placeholder="Cari nama produk, nomor JO, PO#, atau kode item..." oninput="renderArsipJO()">
+                <div class="archive-date-filter">
+                    <label for="archiveFromDate">Tanggal arsip dari</label>
+                    <input type="date" id="archiveFromDate" class="search-box" onchange="renderArsipJO()">
+                </div>
+                <div class="archive-date-filter">
+                    <label for="archiveToDate">Tanggal arsip sampai</label>
+                    <input type="date" id="archiveToDate" class="search-box" onchange="renderArsipJO()">
+                </div>
+                <button class="btn-restore-archive" onclick="unduhPdfArsip()" style="padding:9px 13px;font-size:11px;">Unduh PDF</button>
+                <button class="btn-cancel-modal" onclick="resetFilterArsipJO()" style="padding:9px 13px;font-size:11px;">Reset Filter</button>
             </div>
+            <div id="archiveExportFilterInfo" style="font-size:10px;color:#718093;margin:-3px 0 9px;">Filter tanggal menggunakan tanggal arsip (WIB). Pencarian teks mencakup nama produk, JO, PO#, dan kode item.</div>
             <div class="archive-table-wrap">
                 <table class="archive-table">
                     <thead>
@@ -2009,7 +2029,11 @@
 
         window.bukaArsipJO = async function() {
             const search = document.getElementById("searchArsipJO");
+            const fromDate = document.getElementById("archiveFromDate");
+            const toDate = document.getElementById("archiveToDate");
             if (search) search.value = "";
+            if (fromDate) fromDate.value = "";
+            if (toDate) toDate.value = "";
             const modal = document.getElementById("arsipJOModal");
             if (modal) modal.style.display = "flex";
             await loadArchivesFromSupabase();
@@ -2021,24 +2045,67 @@
             if (modal) modal.style.display = "none";
         };
 
+        function tanggalArsipWIB(value) {
+            const date = value?.toDate ? value.toDate() : new Date(value);
+            if (!date || Number.isNaN(date.getTime())) return "";
+            const parts = new Intl.DateTimeFormat("en-CA", {
+                timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit"
+            }).formatToParts(date);
+            const get = type => parts.find(part => part.type === type)?.value || "";
+            return get("year") + "-" + get("month") + "-" + get("day");
+        }
+
+        function filteredArsipRows() {
+            const keyword = String(document.getElementById("searchArsipJO")?.value || "").trim().toLowerCase();
+            const fromDate = String(document.getElementById("archiveFromDate")?.value || "").trim();
+            const toDate = String(document.getElementById("archiveToDate")?.value || "").trim();
+            return archiveCache.filter(item => {
+                const haystack = [item.jobOrder, item.poNum, item.kodeItem, item.produk]
+                    .map(value => String(value || "").toLowerCase()).join(" ");
+                const archiveDate = tanggalArsipWIB(item.archivedAt);
+                return haystack.includes(keyword) &&
+                    (!fromDate || (archiveDate && archiveDate >= fromDate)) &&
+                    (!toDate || (archiveDate && archiveDate <= toDate));
+            }).sort((a, b) => String(b.archivedAt || "").localeCompare(String(a.archivedAt || "")));
+        }
+
+        window.resetFilterArsipJO = function() {
+            ["searchArsipJO", "archiveFromDate", "archiveToDate"].forEach(id => {
+                const field = document.getElementById(id);
+                if (field) field.value = "";
+            });
+            renderArsipJO();
+        };
+
         window.renderArsipJO = function() {
             const body = document.getElementById("archiveTableBody");
             if (!body) return;
-            const keyword = String(document.getElementById("searchArsipJO")?.value || "").trim().toLowerCase();
-            const rows = archiveCache.filter(item => {
-                const haystack = [item.jobOrder, item.poNum, item.kodeItem, item.produk, item.tanggal]
-                    .map(value => String(value || "").toLowerCase()).join(" ");
-                return haystack.includes(keyword);
-            }).sort((a, b) => String(b.archivedAt || "").localeCompare(String(a.archivedAt || "")));
-
+            const fromDate = String(document.getElementById("archiveFromDate")?.value || "").trim();
+            const toDate = String(document.getElementById("archiveToDate")?.value || "").trim();
+            const rows = filteredArsipRows();
+            const filterInfo = document.getElementById("archiveExportFilterInfo");
+            if (filterInfo) {
+                filterInfo.textContent = fromDate && toDate && fromDate > toDate
+                    ? "Tanggal awal tidak boleh melewati tanggal akhir."
+                    : "Menampilkan " + rows.length.toLocaleString("id-ID") +
+                      " dari " + archiveCache.length.toLocaleString("id-ID") +
+                      " arsip. Filter tanggal berdasarkan tanggal arsip WIB.";
+            }
             updateArchiveCount();
             body.innerHTML = "";
+            if (fromDate && toDate && fromDate > toDate) {
+                const tr = document.createElement("tr"), td = document.createElement("td");
+                td.colSpan = 10; td.style.textAlign = "center"; td.style.padding = "18px";
+                td.style.color = "#c0392b"; td.textContent = "Tanggal awal tidak boleh melewati tanggal akhir.";
+                tr.appendChild(td); body.appendChild(tr); return;
+            }
             if (!rows.length) {
                 const tr = document.createElement("tr"), td = document.createElement("td");
                 td.colSpan = 10; td.style.textAlign = "center"; td.style.padding = "18px";
                 td.style.color = "#718093";
+                const hasFilter = String(document.getElementById("searchArsipJO")?.value || "").trim() || fromDate || toDate;
                 td.textContent = archivesLoaded
-                    ? (keyword ? "Arsip tidak ditemukan." : "Belum ada JO CLOSED di Supabase Storage.")
+                    ? (hasFilter ? "Arsip tidak ditemukan sesuai filter." : "Belum ada JO CLOSED di Supabase Storage.")
                     : "Belum berhasil memuat arsip Supabase.";
                 tr.appendChild(td); body.appendChild(tr); return;
             }
@@ -2086,21 +2153,93 @@
             }
         };
 
-        window.downloadBackupArsip = function() {
-            if (!archiveCache.length) { alert("Belum ada data arsip di Supabase."); return; }
-            const payload = {
-                type: "arsip-jo-closed",
-                storage: "Supabase Storage / arsip-pengiriman",
-                exportedAt: new Date().toISOString(),
-                total: archiveCache.length,
-                records: archiveCache
+        window.unduhPdfArsip = function() {
+            const fromDate = String(document.getElementById("archiveFromDate")?.value || "").trim();
+            const toDate = String(document.getElementById("archiveToDate")?.value || "").trim();
+            if (fromDate && toDate && fromDate > toDate) {
+                alert("Tanggal arsip awal tidak boleh melewati tanggal akhir.");
+                return;
+            }
+            const rows = filteredArsipRows();
+            if (!rows.length) {
+                alert("Tidak ada data arsip yang sesuai filter untuk dibuat PDF.");
+                return;
+            }
+
+            const printWindow = window.open("", "_blank");
+            if (!printWindow) {
+                alert("Jendela PDF diblokir browser. Izinkan pop-up untuk situs Input Pengiriman, lalu ulangi.");
+                return;
+            }
+            const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+            })[ch]);
+            const formatDate = value => {
+                if (!value) return "-";
+                const d = new Date(value + "T00:00:00");
+                return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString("id-ID");
             };
-            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = "Arsip_JO_Closed_" + new Date().toISOString().slice(0, 10) + ".json";
-            document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+            const sumOrder = rows.reduce((sum, item) => sum + Number(item.order || 0), 0);
+            const sumHasil = rows.reduce((sum, item) => sum + Number(item.hasil || 0), 0);
+            const keyword = String(document.getElementById("searchArsipJO")?.value || "").trim();
+            const dateRange = (fromDate || toDate)
+                ? formatDate(fromDate || "—") + " s.d. " + formatDate(toDate || "—")
+                : "Semua tanggal arsip";
+            const tableRows = rows.map((item, index) => {
+                const archivedAt = item.archivedAt ? new Date(item.archivedAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) : "-";
+                return "<tr>" +
+                    "<td>" + (index + 1) + "</td>" +
+                    "<td>" + escapeHtml(formatTanggalID(item.tanggal)) + "</td>" +
+                    "<td>" + escapeHtml(item.jobOrder || "-") + "</td>" +
+                    "<td>" + escapeHtml(item.poNum || "-") + "</td>" +
+                    "<td>" + escapeHtml(item.kodeItem || "-") + "</td>" +
+                    "<td>" + escapeHtml(item.produk || "-") + "</td>" +
+                    "<td class=\"num\">" + Number(item.order || 0).toLocaleString("id-ID") + "</td>" +
+                    "<td class=\"num\">" + Number(item.hasil || 0).toLocaleString("id-ID") + "</td>" +
+                    "<td class=\"num\">" + Number(nilaiSisaArsip(item) || 0).toLocaleString("id-ID") + "</td>" +
+                    "<td>" + escapeHtml(archivedAt) + "</td></tr>";
+            }).join("");
+
+            const reportHtml = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Arsip JO CLOSED</title>
+                <style>
+                    @page { size: A4 landscape; margin: 12mm; }
+                    * { box-sizing: border-box; }
+                    body { font-family: Arial, sans-serif; color: #1f2937; font-size: 9px; }
+                    h1 { margin: 0 0 5px; font-size: 17px; color: #203764; }
+                    .subtitle { font-size: 10px; color: #64748b; margin-bottom: 12px; }
+                    .meta { display: flex; flex-wrap: wrap; gap: 18px; padding: 8px 10px; background: #f1f5f9; border: 1px solid #dbe3ee; margin-bottom: 10px; }
+                    .meta strong { color: #203764; }
+                    table { width: 100%; border-collapse: collapse; }
+                    th { background: #203764; color: white; text-align: left; font-size: 8px; }
+                    th, td { border: 1px solid #cbd5e1; padding: 5px 6px; vertical-align: top; }
+                    tbody tr:nth-child(even) { background: #f8fafc; }
+                    .num { text-align: right; white-space: nowrap; }
+                    .footer { margin-top: 10px; color: #64748b; font-size: 8px; display: flex; justify-content: space-between; }
+                    thead { display: table-header-group; }
+                    tr { page-break-inside: avoid; }
+                    @media screen { body { padding: 14px; } }
+                </style></head><body>
+                <h1>LAPORAN ARSIP JOB ORDER CLOSED</h1>
+                <div class="subtitle">Assembly – Ringkasan data pengiriman yang telah diarsipkan</div>
+                <div class="meta">
+                    <span><strong>Jumlah JO:</strong> ${rows.length.toLocaleString("id-ID")}</span>
+                    <span><strong>Total Order:</strong> ${sumOrder.toLocaleString("id-ID")}</span>
+                    <span><strong>Total Hasil:</strong> ${sumHasil.toLocaleString("id-ID")}</span>
+                    <span><strong>Rentang tanggal arsip:</strong> ${escapeHtml(dateRange)}</span>
+                    <span><strong>Filter teks:</strong> ${escapeHtml(keyword || "Semua produk / JO / kode item")}</span>
+                </div>
+                <table><thead><tr>
+                    <th>No.</th><th>Tanggal Kirim</th><th>Job Order</th><th>PO#</th><th>Kode Item</th>
+                    <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Tanggal Arsip (WIB)</th>
+                </tr></thead><tbody>${tableRows}</tbody></table>
+                <div class="footer"><span>Dicetak dari Aplikasi Input Pengiriman</span><span>Waktu cetak: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB</span></div>
+                <script>window.onload = function(){ window.focus(); window.print(); };</script>
+                </body></html>`;
+            printWindow.document.open();
+            printWindow.document.write(reportHtml);
+            printWindow.document.close();
         };
 
         window.cetakPDF = function() { window.print(); };
