@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [jo-closed-supabase-storage]
+    branches: [main, jo-closed-supabase-storage]
 
 jobs:
   validate:
@@ -26,6 +26,7 @@ jobs:
         run: |
           deno check supabase/functions/username-login/index.ts
           deno check supabase/functions/archive-closed-deliveries/index.ts
+          deno check supabase/functions/annual-shipment-archive/index.ts
 
       - name: Validate Admin Input HTML, JavaScript and archive contract
         shell: bash
@@ -83,6 +84,11 @@ jobs:
               "archiveCache.filter",
               'archiveStorage: "supabase"',
               "Supabase Storage / arsip-pengiriman",
+              'id="annualArchivePanel"',
+              'annualArchiveApi("admin-summary")',
+              "window.downloadAnnualBackup",
+              "window.verifikasiBackupTahunan",
+              "window.hapusCloudTahunan",
           ]
           for marker in required:
               if marker not in source:
@@ -96,6 +102,30 @@ jobs:
           print("Supabase login, H+1 client gate, and Supabase archive API markers passed.")
           PY
           node --check /tmp/admin-input.js
+
+      - name: Validate annual backup verification and cloud purge guardrails
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("supabase/functions/annual-shipment-archive/index.ts").read_text(encoding="utf-8")
+          required = [
+              'action === "admin-summary"',
+              'action === "export"',
+              'action === "verify"',
+              'action === "purge"',
+              'state: "VERIFIED"',
+              'state: "PURGING"',
+              'state: "DELETED"',
+              'buildFinalSnapshot(context, year)',
+              'confirmation !== year',
+              'recordsSha256',
+              'delivery_date_year',
+          ]
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit("Missing annual archive safety marker: " + marker)
+          print("Annual export, cloud re-verification, explicit year confirmation and resumable purge guards passed.")
+          PY
 
       - name: Validate private Storage and server-side H+1 enforcement
         run: |
