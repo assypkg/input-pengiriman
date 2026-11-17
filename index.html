@@ -511,6 +511,48 @@
             <input type="file" id="fileInput" style="display: none;" accept=".json" onchange="restoreBackup(event)">
         </div>
 
+        <div class="summary-box" id="annualArchivePanel" style="margin-top:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                <div>
+                    <div class="section-title" style="margin-bottom:3px;">REKAP TAHUNAN & FINALISASI ARSIP</div>
+                    <div style="font-size:10px;color:#64748b;">Pengelompokan mengikuti tanggal pengiriman, bukan awalan Job Order.</div>
+                </div>
+                <button type="button" class="btn-archive-view" id="btnAnnualRefresh" onclick="loadAnnualArchiveSummary()">Muat Ulang Rekap</button>
+            </div>
+            <div style="overflow-x:auto;margin-top:12px;">
+                <table class="desktop-table" style="margin-top:0;background:white;min-width:650px;">
+                    <thead><tr>
+                        <th>Tahun</th><th>Total JO</th><th>Closed</th><th>Open</th><th>Total Hasil</th><th>Status Tahunan</th>
+                    </tr></thead>
+                    <tbody id="annualYearTableBody">
+                        <tr><td colspan="6" style="text-align:center;color:#718093;">Memuat rekap tahunan...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div style="display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin-top:13px;">
+                <div style="min-width:150px;flex:1;">
+                    <label for="annualYearSelect">Pilih Tahun</label>
+                    <select id="annualYearSelect" class="search-box" style="width:100%;" onchange="pilihTahunAnnual()"></select>
+                </div>
+                <div style="flex:2;min-width:220px;font-size:11px;color:#475569;" id="annualYearStatus">Pilih tahun untuk melihat status finalisasi.</div>
+            </div>
+            <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-top:12px;margin-bottom:12px;">
+                <div class="kpi-card"><div class="kpi-title">Total JO</div><div class="kpi-value" id="annualKpiJo">—</div></div>
+                <div class="kpi-card success"><div class="kpi-title">JO Closed</div><div class="kpi-value" id="annualKpiClosed">—</div></div>
+                <div class="kpi-card warning"><div class="kpi-title">JO Open</div><div class="kpi-value" id="annualKpiOpen">—</div></div>
+                <div class="kpi-card info"><div class="kpi-title">Total Hasil</div><div class="kpi-value" id="annualKpiHasil">—</div></div>
+            </div>
+            <div class="cloud-group" style="margin-bottom:8px;">
+                <button type="button" class="btn-backup" id="btnAnnualExport" onclick="downloadAnnualBackup()">Download Backup JSON Tahunan</button>
+                <button type="button" class="btn-restore" id="btnAnnualChooseFile" onclick="document.getElementById('annualBackupFile').click()">Pilih File Backup untuk Verifikasi</button>
+                <input type="file" id="annualBackupFile" accept=".json,application/json" style="display:none;" onchange="pilihFileBackupTahunan(event)">
+                <button type="button" class="btn-archive" id="btnAnnualVerify" onclick="verifikasiBackupTahunan()">Verifikasi Backup</button>
+                <button type="button" class="btn-clear" id="btnAnnualPurge" onclick="hapusCloudTahunan()" disabled>Hapus Data Cloud Tahun Ini</button>
+            </div>
+            <div id="annualBackupFileName" style="font-size:10px;color:#64748b;">Belum ada file backup yang dipilih untuk diverifikasi.</div>
+            <div id="annualArchiveMessage" role="status" style="font-size:11px;color:#64748b;margin-top:7px;">Backup dan penghapusan cloud adalah dua tindakan terpisah. Penghapusan hanya terbuka setelah file backup berhasil diverifikasi.</div>
+        </div>
+
         <!-- TABEL RINGKASAN 7 PENGIRIMAN TERDEKAT / BELUM CLOSED -->
         <div class="summary-box">
             <div class="section-title" style="color: var(--primary); margin-bottom: 8px;">
@@ -704,6 +746,10 @@
         
         let currentUser = ""; 
         let currentRole = "";
+        let annualYearSummaries = [];
+        let annualSelectedBackupFile = null;
+        let annualManifestState = "";
+        let annualManifestSha256 = "";
 
         let lastDeletedItem = null;
         let undoTimer = null;
@@ -772,6 +818,7 @@
                     "<strong>" + currentUser.replace(/[&<>"']/g, "") + "</strong>";
                 catatLogAktivitas("Sistem diakses.");
                 await loadArchivesFromSupabase();
+                await loadAnnualArchiveSummary();
             } catch (error) {
                 errBox.textContent = error.message || "Login gagal. Periksa koneksi dan akun.";
                 errBox.style.display = 'block';
@@ -2379,6 +2426,306 @@
                 try { printWindow.focus(); printWindow.print(); }
                 catch (error) { console.error("Gagal membuka dialog cetak PDF:", error); }
             }, 500);
+        };
+
+
+        // --- REKAP TAHUNAN: berdasarkan tahun pada tanggal pengiriman ---
+        function canonicalAnnualValue(value) {
+            if (Array.isArray(value)) return value.map(canonicalAnnualValue);
+            if (value && typeof value === "object") {
+                const out = {};
+                Object.keys(value).sort().forEach(key => { out[key] = canonicalAnnualValue(value[key]); });
+                return out;
+            }
+            return value;
+        }
+        function formatAnnualNumber(value) {
+            return Number(value || 0).toLocaleString("id-ID");
+        }
+        function annualStatusLabel(status) {
+            return ({
+                FINAL: "FINAL — siap backup dan verifikasi",
+                WAITING_FINALIZATION: "MENUNGGU FINALISASI — masih ada JO Open / belum masuk arsip H+1",
+                RUNNING: "BERJALAN — tahun berjalan",
+                UPCOMING: "BELUM DIMULAI"
+            })[status] || status || "Status tidak tersedia";
+        }
+        async function annualArchiveApi(action, payload = {}) {
+            const token = sessionStorage.getItem("assembly_admin_access_token") || "";
+            if (!token) throw new Error("Sesi Admin berakhir. Silakan login kembali.");
+            const response = await fetch(SUPABASE_URL + "/functions/v1/annual-shipment-archive", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "apikey": SUPABASE_PUBLISHABLE_KEY,
+                    "Authorization": "Bearer " + token
+                },
+                body: JSON.stringify({ action, ...payload })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result.success !== true) {
+                throw new Error(result.error || "Permintaan rekap tahunan gagal diproses.");
+            }
+            return result;
+        }
+        window.loadAnnualArchiveSummary = async function() {
+            const message = document.getElementById("annualArchiveMessage");
+            const refresh = document.getElementById("btnAnnualRefresh");
+            if (refresh) { refresh.disabled = true; refresh.textContent = "Memuat..."; }
+            if (message) message.textContent = "Mengambil rekap seluruh tahun dari Firestore...";
+            try {
+                const result = await annualArchiveApi("admin-summary");
+                annualYearSummaries = Array.isArray(result.years) ? result.years : [];
+                const select = document.getElementById("annualYearSelect");
+                const previous = select?.value || "";
+                if (select) {
+                    select.innerHTML = "";
+                    annualYearSummaries.forEach(item => {
+                        const option = document.createElement("option");
+                        option.value = item.year;
+                        option.textContent = item.year;
+                        select.appendChild(option);
+                    });
+                    if (previous && annualYearSummaries.some(item => item.year === previous)) select.value = previous;
+                    else if (annualYearSummaries.length) select.value = annualYearSummaries[0].year;
+                }
+                renderAnnualYearTable();
+                await loadAnnualBackupManifest();
+                if (message) message.textContent = "Rekap tahunan diperbarui dari " +
+                    annualYearSummaries.length.toLocaleString("id-ID") + " tahun data. Pengelompokan memakai tanggal pengiriman.";
+            } catch (error) {
+                if (message) message.textContent = "Rekap tahunan belum dapat dimuat: " + (error.message || "Kesalahan koneksi.");
+                console.error("Annual shipment summary:", error);
+                const body = document.getElementById("annualYearTableBody");
+                if (body) body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#b91c1c;">Gagal memuat rekap tahunan.</td></tr>';
+            } finally {
+                if (refresh) { refresh.disabled = false; refresh.textContent = "Muat Ulang Rekap"; }
+            }
+        };
+        function selectedAnnualSummary() {
+            const year = document.getElementById("annualYearSelect")?.value || "";
+            return annualYearSummaries.find(item => String(item.year) === year) || null;
+        }
+        function renderAnnualYearTable() {
+            const body = document.getElementById("annualYearTableBody");
+            if (!body) return;
+            body.innerHTML = "";
+            if (!annualYearSummaries.length) {
+                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718093;">Belum ada data pengiriman bertanggal.</td></tr>';
+                renderSelectedAnnualYear();
+                return;
+            }
+            annualYearSummaries.forEach(item => {
+                const tr = document.createElement("tr");
+                const values = [
+                    item.year, formatAnnualNumber(item.totalJO), formatAnnualNumber(item.closedJO),
+                    formatAnnualNumber(item.openJO), formatAnnualNumber(item.totalHasil), annualStatusLabel(item.status)
+                ];
+                values.forEach(value => {
+                    const td = document.createElement("td");
+                    td.textContent = String(value);
+                    tr.appendChild(td);
+                });
+                body.appendChild(tr);
+            });
+            renderSelectedAnnualYear();
+        }
+        window.pilihTahunAnnual = async function() {
+            renderSelectedAnnualYear();
+            await loadAnnualBackupManifest();
+        };
+        function renderSelectedAnnualYear() {
+            const item = selectedAnnualSummary();
+            const status = document.getElementById("annualYearStatus");
+            const year = document.getElementById("annualYearSelect")?.value || "";
+            const jo = document.getElementById("annualKpiJo");
+            const closed = document.getElementById("annualKpiClosed");
+            const open = document.getElementById("annualKpiOpen");
+            const hasil = document.getElementById("annualKpiHasil");
+            const exportButton = document.getElementById("btnAnnualExport");
+            if (!item) {
+                if (status) status.textContent = "Tidak ada rekap untuk tahun " + (year || "-") + ".";
+                [jo, closed, open, hasil].forEach(el => { if (el) el.textContent = "—"; });
+                if (exportButton) exportButton.disabled = true;
+                return;
+            }
+            if (status) status.textContent = annualStatusLabel(item.status) +
+                " • Baris: " + formatAnnualNumber(item.totalRecords) +
+                " • Belum final: " + formatAnnualNumber(item.pendingArchiveRows);
+            if (jo) jo.textContent = formatAnnualNumber(item.totalJO);
+            if (closed) closed.textContent = formatAnnualNumber(item.closedJO);
+            if (open) open.textContent = formatAnnualNumber(item.openJO);
+            if (hasil) hasil.textContent = formatAnnualNumber(item.totalHasil);
+            if (exportButton) exportButton.disabled = item.status !== "FINAL";
+        }
+        async function loadAnnualBackupManifest() {
+            const year = document.getElementById("annualYearSelect")?.value || "";
+            const button = document.getElementById("btnAnnualPurge");
+            annualManifestState = "";
+            annualManifestSha256 = "";
+            if (button) { button.disabled = true; button.textContent = "Hapus Data Cloud Tahun Ini"; }
+            if (!year) return;
+            try {
+                const result = await annualArchiveApi("manifest", { year });
+                const manifest = result.manifest;
+                if (manifest) {
+                    annualManifestState = String(manifest.state || "");
+                    annualManifestSha256 = String(manifest.recordsSha256 || "");
+                }
+                const allowed = ["VERIFIED", "PURGING"].includes(annualManifestState) &&
+                    /^[a-f0-9]{64}$/.test(annualManifestSha256);
+                if (button) {
+                    button.disabled = !allowed;
+                    button.textContent = annualManifestState === "PURGING"
+                        ? "Lanjutkan Penghapusan Cloud"
+                        : "Hapus Data Cloud Tahun Ini";
+                }
+                const message = document.getElementById("annualArchiveMessage");
+                if (message && manifest?.state === "DELETED") {
+                    message.textContent = "Data cloud tahun " + year + " sudah dihapus setelah backup diverifikasi. Manifest verifikasi tetap disimpan.";
+                } else if (message && manifest?.state === "VERIFIED") {
+                    message.textContent = "Backup tahun " + year + " sudah terverifikasi. Penghapusan cloud masih menunggu tindakan terpisah dari Admin.";
+                } else if (message && manifest?.state === "PURGING") {
+                    message.textContent = "Penghapusan tahun " + year + " sedang berlangsung dan dapat dilanjutkan. Jangan hapus file backup lokal.";
+                }
+            } catch (error) {
+                console.warn("Manifest backup tahunan belum tersedia:", error);
+            }
+        }
+        window.downloadAnnualBackup = async function() {
+            const item = selectedAnnualSummary();
+            if (!item || item.status !== "FINAL") {
+                alert("Backup tahunan hanya tersedia setelah semua JO pada tahun tersebut CLOSED, arsip Supabase cocok, dan H+1 telah terlewati.");
+                return;
+            }
+            const button = document.getElementById("btnAnnualExport");
+            const message = document.getElementById("annualArchiveMessage");
+            if (button) { button.disabled = true; button.textContent = "Menyiapkan JSON..."; }
+            if (message) message.textContent = "Menyusun dan mencocokkan seluruh data tahun " + item.year + " dengan arsip cloud...";
+            try {
+                const result = await annualArchiveApi("export", { year: item.year });
+                const backup = result.backup;
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = "REKAP_PENGIRIMAN_ASSEMBLY_" + item.year + ".json";
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+                if (message) message.textContent = "Backup JSON tahun " + item.year + " berhasil dibuat. Simpan file di komputer, lalu pilih kembali file tersebut untuk verifikasi sebelum penghapusan cloud.";
+                await loadAnnualBackupManifest();
+            } catch (error) {
+                if (message) message.textContent = "Backup gagal dibuat: " + (error.message || "Kesalahan koneksi.");
+                alert(error.message || "Backup tahunan gagal dibuat.");
+            } finally {
+                if (button) { button.textContent = "Download Backup JSON Tahunan"; renderSelectedAnnualYear(); }
+            }
+        };
+        window.pilihFileBackupTahunan = function(event) {
+            annualSelectedBackupFile = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+            const label = document.getElementById("annualBackupFileName");
+            if (label) label.textContent = annualSelectedBackupFile
+                ? "File terpilih: " + annualSelectedBackupFile.name + " (" + formatAnnualNumber(annualSelectedBackupFile.size) + " byte)"
+                : "Belum ada file backup yang dipilih.";
+        };
+        async function sha256AnnualRecords(records) {
+            const canonical = JSON.stringify(canonicalAnnualValue(records));
+            const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+            return Array.from(new Uint8Array(digest)).map(value => value.toString(16).padStart(2, "0")).join("");
+        }
+        window.verifikasiBackupTahunan = async function() {
+            const year = document.getElementById("annualYearSelect")?.value || "";
+            const message = document.getElementById("annualArchiveMessage");
+            if (!annualSelectedBackupFile) {
+                alert("Pilih file REKAP_PENGIRIMAN_ASSEMBLY_YYYY.json yang sudah diunduh terlebih dahulu.");
+                return;
+            }
+            const button = document.getElementById("btnAnnualVerify");
+            if (button) { button.disabled = true; button.textContent = "Memeriksa..."; }
+            try {
+                const backup = JSON.parse(await annualSelectedBackupFile.text());
+                if (backup.schemaVersion !== 1 || backup.backupType !== "ASSEMBLY_ANNUAL_SHIPMENT_BACKUP" ||
+                    String(backup.year) !== year || backup.grouping !== "delivery_date_year" ||
+                    !Array.isArray(backup.records) || !backup.integrity) {
+                    throw new Error("Format file, tahun, atau dasar pengelompokan backup tidak sesuai.");
+                }
+                if (backup.summary?.status !== "FINAL" ||
+                    Number(backup.integrity.recordsCount) !== backup.records.length ||
+                    Number(backup.summary.totalRecords) !== backup.records.length) {
+                    throw new Error("Jumlah baris atau status final pada manifest backup tidak valid.");
+                }
+                const seenIds = new Set();
+                for (const record of backup.records) {
+                    const date = String(record?.tanggal || "");
+                    const id = String(record?.docId || "");
+                    if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date.slice(0, 4) !== year ||
+                        record.status !== "CLOSED" || record.archiveState !== "ARCHIVED" || seenIds.has(id)) {
+                        throw new Error("Ada data ganda, tanggal beda tahun, atau baris yang belum CLOSED/ARCHIVED.");
+                    }
+                    seenIds.add(id);
+                }
+                const localHash = await sha256AnnualRecords(backup.records);
+                if (localHash !== String(backup.integrity.recordsSha256 || "").toLowerCase()) {
+                    throw new Error("Checksum file JSON tidak cocok. File mungkin berubah atau rusak.");
+                }
+                if (message) message.textContent = "Checksum lokal valid. Mencocokkan kembali dengan seluruh data cloud...";
+                const result = await annualArchiveApi("verify", {
+                    year,
+                    recordsSha256: localHash,
+                    recordsCount: backup.records.length
+                });
+                annualManifestState = result.state;
+                annualManifestSha256 = localHash;
+                if (message) message.textContent = "VERIFIKASI BERHASIL. File lokal cocok dengan seluruh data Firestore dan arsip Supabase. Penghapusan cloud tetap memerlukan klik tindakan terpisah.";
+                await loadAnnualBackupManifest();
+                alert("Backup tahun " + year + " berhasil diverifikasi. Data cloud belum dihapus.");
+            } catch (error) {
+                if (message) message.textContent = "Verifikasi backup gagal: " + (error.message || "Kesalahan pemeriksaan.");
+                alert(error.message || "Verifikasi backup gagal.");
+            } finally {
+                if (button) { button.disabled = false; button.textContent = "Verifikasi Backup"; }
+            }
+        };
+        window.hapusCloudTahunan = async function() {
+            const year = document.getElementById("annualYearSelect")?.value || "";
+            if (!year || !["VERIFIED", "PURGING"].includes(annualManifestState) || !annualManifestSha256) {
+                alert("Penghapusan ditolak. Backup tahun ini belum terverifikasi.");
+                return;
+            }
+            const typedYear = prompt("Backup telah diverifikasi. Untuk menghapus data cloud tahun " + year + ", ketik tahun tersebut:");
+            if (typedYear !== year) return;
+            if (!confirm("PERINGATAN: Hanya data pengiriman tahun " + year + " berdasarkan tanggal pengiriman yang akan dihapus dari Firestore dan Supabase Storage. Data aktif dan tahun lain tidak akan dihapus. File backup lokal wajib disimpan. Lanjutkan?")) return;
+            const button = document.getElementById("btnAnnualPurge");
+            const message = document.getElementById("annualArchiveMessage");
+            if (button) { button.disabled = true; button.textContent = "Menghapus..."; }
+            try {
+                let hasMore = true;
+                let loops = 0;
+                while (hasMore && loops < 100) {
+                    const result = await annualArchiveApi("purge", {
+                        year, confirmYear: year, recordsSha256: annualManifestSha256
+                    });
+                    loops++;
+                    hasMore = result.hasMore === true;
+                    if (message) message.textContent = "Penghapusan data tahun " + year + ": " +
+                        formatAnnualNumber(result.deletedRecords) + " / " +
+                        formatAnnualNumber(result.totalRecords) + " baris diproses...";
+                }
+                if (hasMore) throw new Error("Proses mencapai batas aman sesi. Tekan Lanjutkan Penghapusan Cloud untuk meneruskan.");
+                annualManifestState = "DELETED";
+                if (message) message.textContent = "Selesai. Data cloud tahun " + year + " sudah dihapus. Manifest verifikasi tetap tersedia; backup JSON lokal menjadi sumber pemulihan.";
+                await loadAnnualArchiveSummary();
+                alert("Penghapusan data cloud tahun " + year + " selesai.");
+            } catch (error) {
+                if (message) message.textContent = "Penghapusan belum tuntas: " + (error.message || "Kesalahan koneksi.") + " Proses dapat dilanjutkan setelah koneksi normal.";
+                await loadAnnualBackupManifest();
+                alert(error.message || "Penghapusan belum tuntas.");
+            } finally {
+                if (button) { button.textContent = annualManifestState === "PURGING" ? "Lanjutkan Penghapusan Cloud" : "Hapus Data Cloud Tahun Ini"; }
+                await loadAnnualBackupManifest();
+            }
         };
 
         window.cetakPDF = function() { window.print(); };
