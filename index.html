@@ -2484,6 +2484,7 @@
             const body = document.getElementById("archiveTableBody");
             const cards = document.getElementById("archiveMobileCards");
             if (!body) return;
+
             const fromDate = String(document.getElementById("archiveFromDate")?.value || "").trim();
             const toDate = String(document.getElementById("archiveToDate")?.value || "").trim();
             const rows = filteredArsipRows();
@@ -2495,12 +2496,14 @@
                       " dari " + archiveCache.length.toLocaleString("id-ID") +
                       " arsip. Filter tanggal berdasarkan tanggal arsip WIB.";
             }
+
             updateArchiveCount();
             body.innerHTML = "";
             if (cards) cards.innerHTML = "";
 
             const showEmpty = message => {
-                const tr = document.createElement("tr"), td = document.createElement("td");
+                const tr = document.createElement("tr");
+                const td = document.createElement("td");
                 td.colSpan = 11;
                 td.style.textAlign = "center";
                 td.style.padding = "18px";
@@ -2508,6 +2511,58 @@
                 td.textContent = message;
                 tr.appendChild(td);
                 body.appendChild(tr);
+
+                if (cards) {
+                    const empty = document.createElement("div");
+                    empty.className = "archive-mobile-card";
+                    empty.style.cssText = "text-align:center;color:#718093;padding:16px 10px;border-left:1px solid #dbe3ee;";
+                    empty.textContent = message;
+                    cards.appendChild(empty);
+                }
+            };
+
+            if (fromDate && toDate && fromDate > toDate) {
+                showEmpty("Tanggal awal tidak boleh melewati tanggal akhir.");
+                return;
+            }
+            if (!rows.length) {
+                const hasFilter = String(document.getElementById("searchArsipJO")?.value || "").trim() || fromDate || toDate;
+                showEmpty(archivesLoaded
+                    ? (hasFilter ? "Arsip tidak ditemukan sesuai filter." : "Belum ada JO CLOSED di Supabase Storage.")
+                    : "Belum berhasil memuat arsip Supabase.");
+                return;
+            }
+
+            rows.forEach(item => {
+                const order = Number(item.order || 0);
+                const hasil = Number(item.hasil || 0);
+                const sisa = Number(nilaiSisaArsip(item) || 0);
+                const archivedAt = item.archivedAt
+                    ? new Date(item.archivedAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })
+                    : "-";
+
+                // Tabel desktop.
+                const tr = document.createElement("tr");
+                [
+                    formatTanggalID(item.tanggal), item.jobOrder || "-", item.poNum || "-",
+                    item.kodeItem || "-", item.produk || "-",
+                    order.toLocaleString("id-ID"), hasil.toLocaleString("id-ID"),
+                    sisa.toLocaleString("id-ID"), item.ket || "-", archivedAt
+                ].forEach(value => {
+                    const cell = document.createElement("td");
+                    cell.textContent = String(value);
+                    tr.appendChild(cell);
+                });
+                const action = document.createElement("td");
+                const restoreTable = document.createElement("button");
+                restoreTable.className = "btn-restore-archive";
+                restoreTable.textContent = "Pulihkan";
+                restoreTable.addEventListener("click", () => pulihkanJO(item.sourceDocId));
+                action.appendChild(restoreTable);
+                tr.appendChild(action);
+                body.appendChild(tr);
+
+                // Kartu mobile yang padat agar lebih banyak JO terlihat sekaligus.
                 if (cards) {
                     const card = document.createElement("article");
                     card.className = "archive-mobile-card";
@@ -2520,15 +2575,17 @@
                     joNumber.className = "archive-mobile-jo";
                     joNumber.textContent = item.jobOrder || "-";
                     joBlock.appendChild(joNumber);
+
                     const status = document.createElement("span");
                     status.className = "archive-mobile-status";
                     status.textContent = "CLOSED";
-                    const restore = document.createElement("button");
-                    restore.type = "button";
-                    restore.className = "btn-restore-archive archive-mobile-restore";
-                    restore.textContent = "Pulihkan";
-                    restore.addEventListener("click", () => pulihkanJO(item.sourceDocId));
-                    head.append(joBlock, status, restore);
+
+                    const restoreCard = document.createElement("button");
+                    restoreCard.type = "button";
+                    restoreCard.className = "btn-restore-archive archive-mobile-restore";
+                    restoreCard.textContent = "Pulihkan";
+                    restoreCard.addEventListener("click", () => pulihkanJO(item.sourceDocId));
+                    head.append(joBlock, status, restoreCard);
 
                     const product = document.createElement("div");
                     product.className = "archive-mobile-product";
@@ -2578,7 +2635,6 @@
                 }
             });
         };
-
 
         window.pulihkanJO = async function(docId) {
             const item = archiveCache.find(row => row && row.sourceDocId === docId);
