@@ -113,6 +113,12 @@ jobs:
               "active-record-status",
               "active-date-header",
               "card-footer-actions",
+              "function nilaiSisaPengirimanAktif(item)",
+              "nilaiSisaPengirimanAktif(item) <= 0",
+              'id="detailTanggalCards"',
+              "detail-date-cards",
+              "active-record-jo, .active-record-fg",
+              "archive-mobile-jo, .archive-mobile-code",
 
               "window.downloadAnnualBackup",
               "window.verifikasiBackupTahunan",
