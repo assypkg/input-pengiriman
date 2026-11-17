@@ -1,7 +1,7 @@
-// Validate the existing corporate Viewer token using Firebase's Firestore REST API.
-// This mirrors monitoring-pengiriman's validateSchedule + device registration rules.
-// Required Edge Function secret: FIREBASE_SERVICE_ACCOUNT_JSON
-// Uses Supabase's reserved SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY only server-side.
+// Validate the existing corporate Viewer token through Firestore Security Rules.
+// This endpoint uses the same public Firebase Web API key as the Viewer app.
+// It does not bypass Firestore rules and does not use or expose a service-account key.
+// The browser's existing login flow registers the device before archive access is requested.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://assypkg.github.io",
@@ -9,126 +9,11 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
 };
-
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: corsHeaders });
 
-function base64url(input: Uint8Array | string): string {
-  const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-}
-
-function pemToDer(pem: string): ArrayBuffer {
-  const normalized = pem.replace(/\\n/g, "\n");
-  const clean = normalized.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
-  const binary = atob(clean);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
-function decodeFirebaseServiceAccount(raw: string): any {
-  let cleaned = raw.trim().replace(/^\uFEFF/, "");
-  cleaned = cleaned.replace(/^FIREBASE_SERVICE_ACCOUNT_JSON\s*=\s*/i, "");
-  if ((cleaned.startsWith("'") && cleaned.endsWith("'")) ||
-      (cleaned.startsWith('"') && cleaned.endsWith('"'))) {
-    cleaned = cleaned.slice(1, -1);
-  }
-
-  const candidates: string[] = [cleaned];
-  try {
-    const base64Payload = cleaned.replace(/^base64:/i, "").replace(/\s/g, "");
-    const normalizedBase64 = base64Payload.replace(/-/g, "+").replace(/_/g, "/");
-    candidates.push(atob(normalizedBase64));
-  } catch (_) {}
-
-  for (const candidate of candidates) {
-    try {
-      let parsed: any = JSON.parse(candidate);
-      if (typeof parsed === "string") parsed = JSON.parse(parsed);
-      if (parsed && typeof parsed === "object" &&
-          typeof parsed.project_id === "string" &&
-          typeof parsed.client_email === "string" &&
-          typeof parsed.private_key === "string") {
-        return parsed;
-      }
-      if (parsed && parsed.service_account && typeof parsed.service_account === "object") {
-        const nested = parsed.service_account;
-        if (nested.project_id && nested.client_email && nested.private_key) return nested;
-      }
-    } catch (_) {}
-  }
-  throw new Error("Firebase service account secret format is not recognized.");
-}
-
-function getFirebaseServiceAccount(): any {
-  const names = [
-    "FIREBASE_SERVICE_ACCOUNT_JSON",
-    "FIREBASE_SERVICE_ACCOUNT",
-    "FIREBASE_SERVICE_ACCOUNT_BASE64",
-    "GOOGLE_SERVICE_ACCOUNT_JSON",
-  ];
-  for (const name of names) {
-    const value = Deno.env.get(name);
-    if (!value) continue;
-    try {
-      return decodeFirebaseServiceAccount(value);
-    } catch (_) {}
-  }
-  throw new Error("No valid Firebase service account JSON secret found.");
-}
-
-async function getGoogleAccessToken(serviceAccount: any): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claim = base64url(JSON.stringify({
-    iss: serviceAccount.client_email,
-    scope: "https://www.googleapis.com/auth/datastore",
-    aud: "https://oauth2.googleapis.com/token",
-    iat: now,
-    exp: now + 3600,
-  }));
-  const unsigned = `${header}.${claim}`;
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    pemToDer(serviceAccount.private_key),
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = new Uint8Array(await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned),
-  ));
-  const assertion = `${unsigned}.${base64url(signature)}`;
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion,
-    }),
-  });
-  const payload = await response.json();
-  if (!response.ok || !payload.access_token) throw new Error("Google service authentication failed");
-  return payload.access_token;
-}
-
-function firestoreValue(value: any): any {
-  if (value === null) return { nullValue: null };
-  if (typeof value === "boolean") return { booleanValue: value };
-  if (typeof value === "number") return Number.isInteger(value)
-    ? { integerValue: String(value) } : { doubleValue: value };
-  if (typeof value === "string") return { stringValue: value };
-  if (Array.isArray(value)) return { arrayValue: { values: value.map(firestoreValue) } };
-  if (typeof value === "object") {
-    const fields: Record<string, any> = {};
-    for (const [key, item] of Object.entries(value)) fields[key] = firestoreValue(item);
-    return { mapValue: { fields } };
-  }
-  return { nullValue: null };
-}
+const FIREBASE_PROJECT_ID = "summarypengiriman";
+const FIREBASE_WEB_API_KEY = "AIzaSyCi7Tr4DDGvWg-a8Fd_tybUS7bBq0hrvaY";
 
 function fromFirestoreValue(value: any): any {
   if (!value) return null;
@@ -141,7 +26,9 @@ function fromFirestoreValue(value: any): any {
   if ("arrayValue" in value) return (value.arrayValue.values || []).map(fromFirestoreValue);
   if ("mapValue" in value) {
     const out: Record<string, any> = {};
-    for (const [key, item] of Object.entries(value.mapValue.fields || {})) out[key] = fromFirestoreValue(item);
+    for (const [key, item] of Object.entries(value.mapValue.fields || {})) {
+      out[key] = fromFirestoreValue(item);
+    }
     return out;
   }
   return null;
@@ -149,25 +36,32 @@ function fromFirestoreValue(value: any): any {
 
 function decodeDocument(doc: any): Record<string, any> {
   const out: Record<string, any> = {};
-  for (const [key, value] of Object.entries(doc.fields || {})) out[key] = fromFirestoreValue(value);
+  for (const [key, value] of Object.entries(doc.fields || {})) {
+    out[key] = fromFirestoreValue(value);
+  }
   return out;
 }
 
 function validateSchedule(schedule: any): boolean {
   if (!schedule || !schedule.isScheduled) return true;
   try {
-    // The original Viewer uses the browser's local timezone. Its users are in Indonesia;
-    // the server uses Asia/Jakarta to preserve the current production schedule semantics.
     const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Jakarta", weekday: "short", year: "numeric",
-      month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+      weekday: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
       hourCycle: "h23",
     }).formatToParts(new Date());
     const get = (type: string) => parts.find((part) => part.type === type)?.value || "";
-    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const dayMap: Record<string, number> = {
+      Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+    };
     const currentDay = dayMap[get("weekday")];
     const currentTimeInt = Number(get("hour")) * 60 + Number(get("minute"));
-    const today = `${get("year")}-${get("month")}-${get("day")}`;
+    const today = get("year") + "-" + get("month") + "-" + get("day");
     const [startH, startM] = schedule.start.time.split(":").map(Number);
     const [endH, endM] = schedule.end.time.split(":").map(Number);
     const startTimeInt = startH * 60 + startM;
@@ -179,10 +73,10 @@ function validateSchedule(schedule: any): boolean {
       if (type === "khusus") return Array.isArray(days) && days.includes(checkDay);
       if (type === "sekali") {
         const created = new Date(createdAt);
-        const createdParts = new Intl.DateTimeFormat("en-CA", {
+        const createdDay = new Intl.DateTimeFormat("en-CA", {
           timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(created);
-        return createdParts === today;
+        return createdDay === today;
       }
       return false;
     };
@@ -190,11 +84,13 @@ function validateSchedule(schedule: any): boolean {
     const startToday = isDayValid(schedule.start.type, schedule.start.days, currentDay, schedule.createdAt);
     if (startTimeInt <= endTimeInt) {
       const endToday = isDayValid(schedule.end.type, schedule.end.days, currentDay, schedule.createdAt);
-      return (startToday || endToday) && currentTimeInt >= startTimeInt && currentTimeInt <= endTimeInt;
+      return (startToday || endToday) &&
+        currentTimeInt >= startTimeInt && currentTimeInt <= endTimeInt;
     }
     const yesterday = currentDay === 0 ? 6 : currentDay - 1;
     return (startToday && currentTimeInt >= startTimeInt) ||
-      (isDayValid(schedule.start.type, schedule.start.days, yesterday, schedule.createdAt) && currentTimeInt <= endTimeInt);
+      (isDayValid(schedule.start.type, schedule.start.days, yesterday, schedule.createdAt) &&
+        currentTimeInt <= endTimeInt);
   } catch {
     return false;
   }
@@ -202,95 +98,94 @@ function validateSchedule(schedule: any): boolean {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
+  if (req.method !== "POST") return json({ success: false, message: "Method not allowed." }, 405);
 
-  let failureStage = "read_request";
   try {
-    const { token, deviceId } = await req.json();
-    if (typeof token !== "string" || !token.trim() ||
-        typeof deviceId !== "string" || !/^[A-Za-z0-9_-]{3,80}$/.test(deviceId)) {
-      return json({ success: false, message: "Token dan identitas perangkat wajib diisi." }, 400);
+    const input = await req.json();
+    const token = typeof input?.token === "string" ? input.token.trim().toUpperCase() : "";
+    const deviceId = typeof input?.deviceId === "string" ? input.deviceId : "";
+    if (!token || token.length > 120 || !/^[A-Za-z0-9_-]{3,80}$/.test(deviceId)) {
+      return json({ success: false, message: "Token atau identitas perangkat tidak valid." }, 400);
     }
 
-    failureStage = "load_firebase_credentials";
-    const projectId = Deno.env.get("FIREBASE_PROJECT_ID") || "summarypengiriman";
-    failureStage = "parse_firebase_credentials";
-    const serviceAccount = getFirebaseServiceAccount();
-    if (serviceAccount.project_id !== projectId || !serviceAccount.client_email || !serviceAccount.private_key) {
-      return json({ success: false, message: "Project Firebase tidak sesuai." }, 500);
-    }
-
-    failureStage = "google_access_token";
-    const googleToken = await getGoogleAccessToken(serviceAccount);
-    failureStage = "firestore_token_query";
-    const queryResponse = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${googleToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          structuredQuery: {
-            from: [{ collectionId: "access_tokens" }],
-            where: { compositeFilter: { op: "AND", filters: [
-              { fieldFilter: { field: { fieldPath: "token" }, op: "EQUAL", value: { stringValue: token.trim().toUpperCase() } } },
-              { fieldFilter: { field: { fieldPath: "active" }, op: "EQUAL", value: { booleanValue: true } } },
-            ] } },
-            limit: 1,
-          },
-        }),
-      },
+    const queryUrl = new URL(
+      "https://firestore.googleapis.com/v1/projects/" +
+      FIREBASE_PROJECT_ID +
+      "/databases/(default)/documents:runQuery",
     );
-    const queryRows = await queryResponse.json();
-    if (!queryResponse.ok) return json({ success: false, message: "Gagal memeriksa token Viewer." }, 503);
-    const found = Array.isArray(queryRows) ? queryRows.find((row: any) => row.document) : null;
-    if (!found) return json({ success: false, message: "AKSES DITOLAK: Token tidak terdaftar atau telah dinonaktifkan." }, 401);
+    queryUrl.searchParams.set("key", FIREBASE_WEB_API_KEY);
+    const queryResponse = await fetch(queryUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: "access_tokens" }],
+          where: {
+            compositeFilter: {
+              op: "AND",
+              filters: [
+                {
+                  fieldFilter: {
+                    field: { fieldPath: "token" },
+                    op: "EQUAL",
+                    value: { stringValue: token },
+                  },
+                },
+                {
+                  fieldFilter: {
+                    field: { fieldPath: "active" },
+                    op: "EQUAL",
+                    value: { booleanValue: true },
+                  },
+                },
+              ],
+            },
+          },
+          limit: 1,
+        },
+      }),
+    });
 
-    const document = found.document;
-    failureStage = "validate_viewer_schedule";
-    const tokenData = decodeDocument(document);
-    if (!validateSchedule(tokenData.schedule)) {
-      return json({ success: false, message: "AKSES DITOLAK: Saat ini berada di luar jadwal aktif token." }, 403);
+    if (!queryResponse.ok) {
+      console.error("viewer-token-firestore-query", queryResponse.status);
+      return json({ success: false, message: "Firestore menolak pemeriksaan token Viewer." }, 503);
     }
 
-    const registeredDevices: string[] = Array.isArray(tokenData.registeredDevices) ? tokenData.registeredDevices : [];
-    const maxDevices = Number(tokenData.maxDevices) || 1;
+    const queryRows = await queryResponse.json();
+    const found = Array.isArray(queryRows) ? queryRows.find((row: any) => row.document) : null;
+    if (!found) {
+      return json({
+        success: false,
+        message: "AKSES DITOLAK: Token tidak terdaftar atau telah dinonaktifkan.",
+      }, 401);
+    }
+
+    const tokenData = decodeDocument(found.document);
+    if (!validateSchedule(tokenData.schedule)) {
+      return json({
+        success: false,
+        message: "AKSES DITOLAK: Saat ini berada di luar jadwal aktif token.",
+      }, 403);
+    }
+
+    const registeredDevices = Array.isArray(tokenData.registeredDevices)
+      ? tokenData.registeredDevices
+      : [];
     if (!registeredDevices.includes(deviceId)) {
-      if (registeredDevices.length >= maxDevices) {
-        return json({ success: false, message: `AKSES DITOLAK: Token penuh (${maxDevices} perangkat).` }, 403);
-      }
-      failureStage = "register_viewer_device";
-      const docPath = document.name;
-      const updateResponse = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${googleToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            writes: [{
-              transform: {
-                document: docPath,
-                fieldTransforms: [{
-                  fieldPath: "registeredDevices",
-                  appendMissingElements: { values: [{ stringValue: deviceId }] },
-                }],
-              },
-            }],
-          }),
-        },
-      );
-      if (!updateResponse.ok) {
-        return json({ success: false, message: "Gagal mendaftarkan perangkat ke token." }, 503);
-      }
+      return json({
+        success: false,
+        message: "AKSES DITOLAK: Perangkat belum terdaftar pada token ini. Login Viewer kembali.",
+      }, 403);
     }
 
     return json({
       success: true,
       tokenValid: true,
       deviceRegistered: true,
-      message: "Otorisasi berhasil.",
+      message: "Otorisasi Viewer berhasil.",
     });
   } catch (error) {
-    console.error("viewer-token-validation", { stage: failureStage, message: error instanceof Error ? error.message : "unknown" });
-    return json({ success: false, message: "Kesalahan koneksi sistem (" + failureStage + ")." }, 503);
+    console.error("viewer-token-validation", error);
+    return json({ success: false, message: "Validasi token Viewer gagal diproses." }, 503);
   }
 });
