@@ -21,11 +21,38 @@ function base64url(input: Uint8Array | string): string {
 }
 
 function pemToDer(pem: string): ArrayBuffer {
-  const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  const normalized = pem.replace(/\\n/g, "\n");
+  const clean = normalized.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
   const binary = atob(clean);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes.buffer;
+}
+
+function decodeFirebaseServiceAccount(raw: string): any {
+  const candidates: string[] = [raw.trim()];
+  try {
+    const base64Payload = raw.trim().replace(/^base64:/i, "").replace(/\s/g, "");
+    candidates.push(atob(base64Payload));
+  } catch (_) {}
+
+  for (const candidate of candidates) {
+    try {
+      let parsed: any = JSON.parse(candidate);
+      if (typeof parsed === "string") parsed = JSON.parse(parsed);
+      if (parsed && typeof parsed === "object" &&
+          typeof parsed.project_id === "string" &&
+          typeof parsed.client_email === "string" &&
+          typeof parsed.private_key === "string") {
+        return parsed;
+      }
+      if (parsed?.service_account && typeof parsed.service_account === "object") {
+        const nested = parsed.service_account;
+        if (nested.project_id && nested.client_email && nested.private_key) return nested;
+      }
+    } catch (_) {}
+  }
+  throw new Error("Firebase service account secret must be JSON or Base64 JSON with project_id, client_email, and private_key.");
 }
 
 async function getGoogleAccessToken(serviceAccount: any): Promise<string> {
@@ -165,7 +192,7 @@ Deno.serve(async (req: Request) => {
     const serviceAccountRaw = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_JSON");
     if (!serviceAccountRaw) return json({ success: false, message: "Konfigurasi Firebase server belum tersedia." }, 500);
     failureStage = "parse_firebase_credentials";
-    const serviceAccount = JSON.parse(serviceAccountRaw);
+    const serviceAccount = decodeFirebaseServiceAccount(serviceAccountRaw);
     if (serviceAccount.project_id !== projectId || !serviceAccount.client_email || !serviceAccount.private_key) {
       return json({ success: false, message: "Project Firebase tidak sesuai." }, 500);
     }
