@@ -296,6 +296,38 @@
         .archive-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
         .archive-table th, .archive-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
         .archive-table th { position: sticky; top: 0; background: var(--primary); color: white; z-index: 2; }
+        .archive-mobile-cards { display:none; }
+        .archive-mobile-card { min-width:0; padding:15px; border:1px solid #dbe3ee; border-left:5px solid #27ae60; border-radius:11px; background:#fff; box-shadow:0 2px 8px rgba(15,23,42,.05); }
+        .archive-mobile-card-head { display:flex; justify-content:space-between; align-items:center; gap:10px; padding-bottom:10px; border-bottom:1px solid #e8edf4; }
+        .archive-mobile-jo-label { display:block; color:#64748b; font-size:10px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
+        .archive-mobile-jo { display:block; margin-top:3px; color:#203764; font-size:15px; line-height:1.3; font-weight:800; overflow-wrap:anywhere; }
+        .archive-mobile-status { flex:0 0 auto; padding:5px 9px; border-radius:20px; color:#16834b; background:#e9f8ef; font-size:10px; font-weight:800; }
+        .archive-mobile-product { margin:11px 0 3px; color:#253858; font-size:14px; line-height:1.4; font-weight:750; overflow-wrap:anywhere; }
+        .archive-mobile-code { margin-bottom:11px; color:#64748b; font-size:11px; font-weight:600; overflow-wrap:anywhere; }
+        .archive-mobile-qty-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin-bottom:12px; }
+        .archive-mobile-qty { min-width:0; padding:9px 8px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc; }
+        .archive-mobile-qty span { display:block; color:#64748b; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.2px; }
+        .archive-mobile-qty strong { display:block; margin-top:5px; color:#203764; font-size:14px; font-weight:800; overflow-wrap:anywhere; }
+        .archive-mobile-qty.is-result strong { color:#16834b; }
+        .archive-mobile-details { display:grid; grid-template-columns:1fr 1fr; gap:10px 12px; padding-top:11px; border-top:1px dashed #dce4ee; }
+        .archive-mobile-detail { min-width:0; }
+        .archive-mobile-detail.is-wide { grid-column:1/-1; }
+        .archive-mobile-detail span { display:block; margin-bottom:3px; color:#7b8798; font-size:9px; font-weight:800; letter-spacing:.3px; text-transform:uppercase; }
+        .archive-mobile-detail strong { display:block; color:#334155; font-size:11px; font-weight:650; line-height:1.45; overflow-wrap:anywhere; }
+        .archive-mobile-detail.is-note strong { padding:8px 9px; border-radius:7px; background:#f8fafc; font-weight:500; }
+        .archive-mobile-restore { width:100%; margin-top:12px; min-height:42px; border-radius:7px; font-size:12px; font-weight:750; }
+        @media (max-width:850px) {
+            #arsipJOModal { padding:6px; align-items:stretch; }
+            #arsipJOModal .modal-content { width:100%; max-width:none; max-height:calc(100dvh - 12px); padding:12px; border-radius:12px; }
+            .archive-table-wrap { display:none; }
+            .archive-mobile-cards { display:flex; flex-direction:column; gap:12px; }
+        }
+        @media (max-width:380px) {
+            .archive-mobile-card { padding:12px; }
+            .archive-mobile-qty-grid { gap:5px; }
+            .archive-mobile-qty { padding:8px 6px; }
+            .archive-mobile-qty strong { font-size:12px; }
+        }
         .btn-restore-archive { background: #0f766e; padding: 5px 9px; font-size: 10px; }
         .archive-tabs { display:grid; grid-template-columns:1fr 1fr; gap:7px; padding:4px; margin:0 0 12px; border:1px solid #dbe3ee; border-radius:10px; background:#f1f5f9; }
         .archive-tab-button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-width:0; padding:10px 8px; border:1px solid transparent; border-radius:8px; background:transparent; color:#475569; cursor:pointer; }
@@ -731,6 +763,7 @@
                     <tbody id="archiveTableBody"></tbody>
                 </table>
             </div>
+            <div id="archiveMobileCards" class="archive-mobile-cards" aria-live="polite"></div>
             <div style="font-size:10px;color:#718093;margin-top:8px;">Arsip menyimpan baris pengiriman CLOSED. Data asli dan ID dokumen Firestore tetap dipertahankan.</div>
             </section>
         </div>
@@ -2350,6 +2383,7 @@
 
         window.renderArsipJO = function() {
             const body = document.getElementById("archiveTableBody");
+            const cards = document.getElementById("archiveMobileCards");
             if (!body) return;
             const fromDate = String(document.getElementById("archiveFromDate")?.value || "").trim();
             const toDate = String(document.getElementById("archiveToDate")?.value || "").trim();
@@ -2364,43 +2398,136 @@
             }
             updateArchiveCount();
             body.innerHTML = "";
-            if (fromDate && toDate && fromDate > toDate) {
+            if (cards) cards.innerHTML = "";
+
+            const showEmpty = message => {
                 const tr = document.createElement("tr"), td = document.createElement("td");
-                td.colSpan = 11; td.style.textAlign = "center"; td.style.padding = "18px";
-                td.style.color = "#c0392b"; td.textContent = "Tanggal awal tidak boleh melewati tanggal akhir.";
-                tr.appendChild(td); body.appendChild(tr); return;
+                td.colSpan = 11;
+                td.style.textAlign = "center";
+                td.style.padding = "18px";
+                td.style.color = "#718093";
+                td.textContent = message;
+                tr.appendChild(td);
+                body.appendChild(tr);
+                if (cards) {
+                    const empty = document.createElement("div");
+                    empty.className = "archive-mobile-card";
+                    empty.style.cssText = "text-align:center;color:#718093;padding:22px 14px;border-left:1px solid #dbe3ee;";
+                    empty.textContent = message;
+                    cards.appendChild(empty);
+                }
+            };
+
+            if (fromDate && toDate && fromDate > toDate) {
+                showEmpty("Tanggal awal tidak boleh melewati tanggal akhir.");
+                return;
             }
             if (!rows.length) {
-                const tr = document.createElement("tr"), td = document.createElement("td");
-                td.colSpan = 10; td.style.textAlign = "center"; td.style.padding = "18px";
-                td.style.color = "#718093";
                 const hasFilter = String(document.getElementById("searchArsipJO")?.value || "").trim() || fromDate || toDate;
-                td.textContent = archivesLoaded
+                showEmpty(archivesLoaded
                     ? (hasFilter ? "Arsip tidak ditemukan sesuai filter." : "Belum ada JO CLOSED di Supabase Storage.")
-                    : "Belum berhasil memuat arsip Supabase.";
-                tr.appendChild(td); body.appendChild(tr); return;
+                    : "Belum berhasil memuat arsip Supabase.");
+                return;
             }
+
             rows.forEach(item => {
+                const order = Number(item.order || 0);
+                const hasil = Number(item.hasil || 0);
+                const sisa = Number(nilaiSisaArsip(item) || 0);
+                const archivedAt = item.archivedAt
+                    ? new Date(item.archivedAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })
+                    : "-";
+
                 const tr = document.createElement("tr");
                 [
                     formatTanggalID(item.tanggal), item.jobOrder || "-", item.poNum || "-",
                     item.kodeItem || "-", item.produk || "-",
-                    Number(item.order || 0).toLocaleString("id-ID"),
-                    Number(item.hasil || 0).toLocaleString("id-ID"),
-                    Number(nilaiSisaArsip(item) || 0).toLocaleString("id-ID"),
-                    item.ket || "-",
-                    item.archivedAt ? new Date(item.archivedAt).toLocaleString("id-ID") : "-"
+                    order.toLocaleString("id-ID"), hasil.toLocaleString("id-ID"),
+                    sisa.toLocaleString("id-ID"), item.ket || "-", archivedAt
                 ].forEach(value => {
-                    const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
+                    const td = document.createElement("td");
+                    td.textContent = String(value);
+                    tr.appendChild(td);
                 });
                 const action = document.createElement("td");
                 const restore = document.createElement("button");
                 restore.className = "btn-restore-archive";
                 restore.textContent = "Pulihkan";
                 restore.addEventListener("click", () => pulihkanJO(item.sourceDocId));
-                action.appendChild(restore); tr.appendChild(action); body.appendChild(tr);
+                action.appendChild(restore);
+                tr.appendChild(action);
+                body.appendChild(tr);
+
+                if (cards) {
+                    const card = document.createElement("article");
+                    card.className = "archive-mobile-card";
+
+                    const head = document.createElement("div");
+                    head.className = "archive-mobile-card-head";
+                    const joBlock = document.createElement("div");
+                    const joLabel = document.createElement("span");
+                    joLabel.className = "archive-mobile-jo-label";
+                    joLabel.textContent = "Job Order";
+                    const joNumber = document.createElement("strong");
+                    joNumber.className = "archive-mobile-jo";
+                    joNumber.textContent = item.jobOrder || "-";
+                    joBlock.append(joLabel, joNumber);
+                    const status = document.createElement("span");
+                    status.className = "archive-mobile-status";
+                    status.textContent = "CLOSED";
+                    head.append(joBlock, status);
+
+                    const product = document.createElement("div");
+                    product.className = "archive-mobile-product";
+                    product.textContent = item.produk || "-";
+                    const code = document.createElement("div");
+                    code.className = "archive-mobile-code";
+                    code.textContent = "Kode Item: " + (item.kodeItem || "-");
+
+                    const qtyGrid = document.createElement("div");
+                    qtyGrid.className = "archive-mobile-qty-grid";
+                    [["Order", order, ""], ["Hasil", hasil, "is-result"], ["Sisa", sisa, ""]]
+                        .forEach(([label, value, extraClass]) => {
+                            const metric = document.createElement("div");
+                            metric.className = "archive-mobile-qty " + extraClass;
+                            const caption = document.createElement("span");
+                            caption.textContent = label;
+                            const number = document.createElement("strong");
+                            number.textContent = Number(value).toLocaleString("id-ID");
+                            metric.append(caption, number);
+                            qtyGrid.appendChild(metric);
+                        });
+
+                    const details = document.createElement("div");
+                    details.className = "archive-mobile-details";
+                    const addDetail = (label, value, wide = false, note = false) => {
+                        const cell = document.createElement("div");
+                        cell.className = "archive-mobile-detail" +
+                            (wide ? " is-wide" : "") + (note ? " is-note" : "");
+                        const caption = document.createElement("span");
+                        caption.textContent = label;
+                        const content = document.createElement("strong");
+                        content.textContent = String(value || "-");
+                        cell.append(caption, content);
+                        details.appendChild(cell);
+                    };
+                    addDetail("PO Number", item.poNum || "-");
+                    addDetail("Tanggal Kirim", formatTanggalID(item.tanggal));
+                    addDetail("Keterangan", item.ket || "-", true, true);
+                    addDetail("Tanggal Arsip", archivedAt, true);
+
+                    const restoreCard = document.createElement("button");
+                    restoreCard.type = "button";
+                    restoreCard.className = "btn-restore-archive archive-mobile-restore";
+                    restoreCard.textContent = "Pulihkan Job Order";
+                    restoreCard.addEventListener("click", () => pulihkanJO(item.sourceDocId));
+
+                    card.append(head, product, code, qtyGrid, details, restoreCard);
+                    cards.appendChild(card);
+                }
             });
         };
+
 
         window.pulihkanJO = async function(docId) {
             const item = archiveCache.find(row => row && row.sourceDocId === docId);
