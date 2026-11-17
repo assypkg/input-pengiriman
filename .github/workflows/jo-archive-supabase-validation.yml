@@ -107,6 +107,13 @@ jobs:
               'id="archiveAnnualTabBtn"',
               "window.pilihTabArsipJO",
               'annualArchiveApi("admin-summary")',
+              "active-record-identity",
+              "active-record-fg",
+              "active-record-qty-grid",
+              "active-record-status",
+              "active-date-header",
+              "card-footer-actions",
+
               "window.downloadAnnualBackup",
               "window.verifikasiBackupTahunan",
               "window.hapusCloudTahunan",
