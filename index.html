@@ -1683,7 +1683,7 @@
                 if (!konfirmasiLanjut) return;
             }
 
-            let inputTambahan = prompt(`JOB ORDER: ${item.jobOrder}\nSisa target: ${Number(item.sisa).toLocaleString('en-US')}\n\nMasukkan penambahan hasil produksi:`);
+            let inputTambahan = prompt(`JOB ORDER: ${item.jobOrder}\nKekurangan target: ${Number(item.sisa).toLocaleString('en-US')}\n\nMasukkan penambahan hasil produksi:`);
             if(inputTambahan === null || inputTambahan.trim() === "") return; 
             let tambahanVal = parseInt(inputTambahan);
             if(isNaN(tambahanVal) || tambahanVal < 0) { alert("Angka tidak valid."); return; }
@@ -2039,15 +2039,14 @@
 
                         if (pdfContainer) {
                             let pdfStatusInfo = isClosed ? '<span class="pdf-status-close">CLOSED</span>' : '<span class="pdf-status-open">OPEN</span>';
-                            let sisaPdfClass = !isClosed ? 'pdf-sisa-open' : '';
                             pdfHtmlContent += `<tr>
                                 <td>${item.jobOrder || '-'}</td>
                                 <td>${displayPo}</td>
                                 <td>${item.kodeItem || '-'}</td>
                                 <td><strong>${item.produk || '-'}</strong></td>
                                 <td style="text-align: right;">${Number(item.order || 0).toLocaleString('en-US')}</td>
-                                <td style="text-align: right;">${Number(item.hasil || 0).toLocaleString('en-US')}</td>
-                                <td style="text-align: right;" class="${sisaPdfClass}">${Number(item.sisa || 0).toLocaleString('en-US')}</td>
+                                <td style="text-align: right; color:${isClosed ? '#27ae60' : '#253858'}; font-weight:bold;">${Number(item.hasil || 0).toLocaleString('en-US')}</td>
+                                <td style="text-align: right; color:${isClosed ? '#253858' : '#d94b40'}; font-weight:bold;">${remainingQty.toLocaleString('en-US')}</td>
                                 <td>${item.ket || '-'}</td>
                                 <td style="text-align: center;">${pdfStatusInfo}</td>
                             </tr>`;
