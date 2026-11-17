@@ -697,6 +697,9 @@
         let archivesLoaded = false;
         let autoArchiveRunning = false;
         let autoArchiveLastCheckAt = 0;
+        let archiveFlagBackfillDone = false;
+        let archiveFlagBackfillRunning = false;
+        let archiveFlagBackfillRetryTimer = null;
         const PASS_ADMIN = "admin"; 
         
         let currentUser = ""; 
@@ -870,10 +873,56 @@
             }
         }
 
+        async function backfillActiveArchiveFlags(snapshot) {
+            if (archiveFlagBackfillDone || archiveFlagBackfillRunning) return;
+            const docsToMark = snapshot.docs.filter(docSnap => {
+                const record = docSnap.data() || {};
+                return record.isArchived === undefined || record.isArchived === null;
+            });
+            if (!docsToMark.length) {
+                archiveFlagBackfillDone = true;
+                return;
+            }
+
+            archiveFlagBackfillRunning = true;
+            try {
+                const { writeBatch } = window.fbModules;
+                for (let i = 0; i < docsToMark.length; i += 400) {
+                    const batch = writeBatch(window.db);
+                    docsToMark.slice(i, i + 400).forEach(docSnap => {
+                        // Only a metadata flag is added. Business fields and archived records are untouched.
+                        batch.update(docSnap.ref, { isArchived: false });
+                    });
+                    await batch.commit();
+                }
+                archiveFlagBackfillDone = true;
+                console.info("Archive metadata backfill completed:", docsToMark.length, "active records marked isArchived=false.");
+            } catch (error) {
+                archiveFlagBackfillDone = false;
+                console.error("Archive metadata backfill failed; shipment values were not changed:", error);
+                if (archiveFlagBackfillRetryTimer) clearTimeout(archiveFlagBackfillRetryTimer);
+                archiveFlagBackfillRetryTimer = setTimeout(() => {
+                    if (typeof window.initRealtimeSyncBackfillRetry === "function") {
+                        window.initRealtimeSyncBackfillRetry();
+                    }
+                }, 8000);
+            } finally {
+                archiveFlagBackfillRunning = false;
+            }
+        }
+
         function initRealtimeSync() {
             const { collection, doc, onSnapshot, query, orderBy, limit } = window.fbModules;
-            
-            onSnapshot(collection(window.db, "production_data_v2"), (snapshot) => {
+
+            let latestProductionSnapshot = null;
+            window.initRealtimeSyncBackfillRetry = async function() {
+                if (latestProductionSnapshot && !archiveFlagBackfillDone) {
+                    await backfillActiveArchiveFlags(latestProductionSnapshot);
+                }
+            };
+
+            onSnapshot(collection(window.db, "production_data_v2"), async (snapshot) => {
+                latestProductionSnapshot = snapshot;
                 database = [];
                 snapshot.forEach((docSnap) => {
                     database.push({ docId: docSnap.id, ...docSnap.data() });
@@ -881,6 +930,7 @@
                 renderTabel();
                 updateGlobalKPI();
                 updateArchiveCount();
+                await backfillActiveArchiveFlags(snapshot);
                 window.prosesArsipOtomatis();
             }, (error) => { console.error(error); });
 
@@ -1244,7 +1294,7 @@
                 btnSubmit.innerHTML = "⏳ MENYIMPAN DATA...";
             }
 
-            let newItem = { tanggal, jobOrder, poNum, kodeItem, produk, order, hasil, sisa: order - hasil, ket, createdAt: window.fbModules.serverTimestamp() };
+            let newItem = { tanggal, jobOrder, poNum, kodeItem, produk, order, hasil, sisa: order - hasil, ket, isArchived: false, createdAt: window.fbModules.serverTimestamp() };
             try {
                 const { collection, addDoc } = window.fbModules;
                 await addDoc(collection(window.db, "production_data_v2"), newItem);
@@ -1387,6 +1437,7 @@
             delete itemToRestore.docId;
             try {
                 const { doc, setDoc } = window.fbModules;
+                if (itemToRestore.isArchived !== true) itemToRestore.isArchived = false;
                 await setDoc(doc(window.db, "production_data_v2", docIdToRestore), itemToRestore);
                 logDisembunyikan = false;
                 await catatLogAktivitas(`UNDO Hapus JO: <strong>${itemToRestore.jobOrder}</strong>.`);
