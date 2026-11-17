@@ -227,6 +227,65 @@ Deno.serve(async (req: Request) => {
       return json({ success: true, bucket: BUCKET, count: rows.length, records: rows });
     }
 
+    if (input.action === "audit") {
+      if (!Array.isArray(input.records) || input.records.length < 1 || input.records.length > MAX_BATCH) {
+        return json({ success: false, error: "Maksimal " + MAX_BATCH + " baris per pemeriksaan." }, 400);
+      }
+      const matched: any[] = [];
+      const missing: any[] = [];
+      const mismatched: any[] = [];
+      const invalid: any[] = [];
+      const textFields = ["tanggal", "jobOrder", "poNum", "kodeItem", "produk", "ket"];
+      const numberFields = ["order", "hasil", "sisa"];
+
+      for (const entry of input.records) {
+        const id = typeof entry?.sourceDocId === "string" ? entry.sourceDocId : "";
+        const data = entry?.data;
+        if (!/^[A-Za-z0-9_-]{3,80}$/.test(id) || !data || data.docId !== id) {
+          invalid.push({ sourceDocId: id || "-", reason: "Identitas dokumen dari Firestore tidak valid." });
+          continue;
+        }
+
+        const envelope = await getStoredRecord(context, PREFIX + id + ".json");
+        if (!envelope) {
+          missing.push({ sourceDocId: id, jobOrder: String(data.jobOrder || "-") });
+          continue;
+        }
+
+        const fields: string[] = [];
+        if (envelope.sourceDocId !== id || envelope.record?.docId !== id) {
+          fields.push("sourceDocId");
+        }
+        for (const field of textFields) {
+          const firestoreValue = String(data[field] ?? "");
+          const supabaseValue = String(envelope.record?.[field] ?? "");
+          if (firestoreValue !== supabaseValue) fields.push(field);
+        }
+        for (const field of numberFields) {
+          const firestoreValue = Number(data[field] ?? 0);
+          const supabaseValue = Number(envelope.record?.[field] ?? 0);
+          if (!Number.isFinite(firestoreValue) || !Number.isFinite(supabaseValue) ||
+              firestoreValue !== supabaseValue) fields.push(field);
+        }
+
+        if (fields.length) {
+          mismatched.push({ sourceDocId: id, jobOrder: String(data.jobOrder || "-"), fields });
+        } else {
+          matched.push({ sourceDocId: id, jobOrder: String(data.jobOrder || "-") });
+        }
+      }
+
+      return json({
+        success: true,
+        bucket: BUCKET,
+        total: input.records.length,
+        matched,
+        missing,
+        mismatched,
+        invalid,
+      });
+    }
+
     if (input.action === "archive") {
       if (!Array.isArray(input.records) || input.records.length < 1 || input.records.length > MAX_BATCH) {
         return json({ success: false, error: "Maksimal " + MAX_BATCH + " baris per proses arsip." }, 400);
