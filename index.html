@@ -318,9 +318,17 @@
         .archive-mobile-restore { width:100%; margin-top:12px; min-height:42px; border-radius:7px; font-size:12px; font-weight:750; }
         @media (max-width:850px) {
             #arsipJOModal { padding:6px; align-items:stretch; }
-            #arsipJOModal .modal-content { width:100%; max-width:none; max-height:calc(100dvh - 12px); padding:12px; border-radius:12px; }
+            #arsipJOModal .modal-content { width:100%; max-width:none; height:calc(100vh - 12px); max-height:calc(100vh - 12px); padding:12px; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; }
+            @supports (height: 100dvh) {
+                #arsipJOModal .modal-content { height:calc(100dvh - 12px); max-height:calc(100dvh - 12px); }
+            }
             .archive-table-wrap { display:none; }
-            .archive-mobile-cards { display:flex; flex-direction:column; gap:12px; }
+            .archive-mobile-cards { display:flex; flex-direction:column; gap:12px; flex:1; min-height:0; overflow-y:auto; padding:2px 2px 8px; overscroll-behavior:contain; }
+            #archiveDataTabPane { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
+            #archiveAnnualTabPane { flex:1; min-height:0; overflow-y:auto; }
+            #archiveDataTabPane .archive-export-toolbar,
+            #archiveDataTabPane #archiveExportFilterInfo,
+            #archiveDataTabPane #archiveAuditResult { flex:0 0 auto; }
         }
         @media (max-width:380px) {
             .archive-mobile-card { padding:12px; }
@@ -2234,7 +2242,7 @@
             const annualPane = document.getElementById("annualArchiveTabPane");
             const dataButton = document.getElementById("archiveDataTabBtn");
             const annualButton = document.getElementById("archiveAnnualTabBtn");
-            if (dataPane) dataPane.style.display = isAnnual ? "none" : "block";
+            if (dataPane) dataPane.style.display = isAnnual ? "none" : "flex";
             if (annualPane) annualPane.style.display = isAnnual ? "block" : "none";
             if (dataButton) {
                 dataButton.classList.toggle("is-active", !isAnnual);
