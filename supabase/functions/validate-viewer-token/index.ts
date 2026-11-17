@@ -152,6 +152,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
 
+  let failureStage = "read_request";
   try {
     const { token, deviceId } = await req.json();
     if (typeof token !== "string" || !token.trim() ||
@@ -159,15 +160,19 @@ Deno.serve(async (req: Request) => {
       return json({ success: false, message: "Token dan identitas perangkat wajib diisi." }, 400);
     }
 
+    failureStage = "load_firebase_credentials";
     const projectId = Deno.env.get("FIREBASE_PROJECT_ID") || "summarypengiriman";
     const serviceAccountRaw = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_JSON");
     if (!serviceAccountRaw) return json({ success: false, message: "Konfigurasi Firebase server belum tersedia." }, 500);
+    failureStage = "parse_firebase_credentials";
     const serviceAccount = JSON.parse(serviceAccountRaw);
-    if (serviceAccount.project_id !== projectId) {
+    if (serviceAccount.project_id !== projectId || !serviceAccount.client_email || !serviceAccount.private_key) {
       return json({ success: false, message: "Project Firebase tidak sesuai." }, 500);
     }
 
+    failureStage = "google_access_token";
     const googleToken = await getGoogleAccessToken(serviceAccount);
+    failureStage = "firestore_token_query";
     const queryResponse = await fetch(
       `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
       {
@@ -191,6 +196,7 @@ Deno.serve(async (req: Request) => {
     if (!found) return json({ success: false, message: "AKSES DITOLAK: Token tidak terdaftar atau telah dinonaktifkan." }, 401);
 
     const document = found.document;
+    failureStage = "validate_viewer_schedule";
     const tokenData = decodeDocument(document);
     if (!validateSchedule(tokenData.schedule)) {
       return json({ success: false, message: "AKSES DITOLAK: Saat ini berada di luar jadwal aktif token." }, 403);
@@ -202,6 +208,7 @@ Deno.serve(async (req: Request) => {
       if (registeredDevices.length >= maxDevices) {
         return json({ success: false, message: `AKSES DITOLAK: Token penuh (${maxDevices} perangkat).` }, 403);
       }
+      failureStage = "register_viewer_device";
       const docPath = document.name;
       const updateResponse = await fetch(
         `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
@@ -233,7 +240,7 @@ Deno.serve(async (req: Request) => {
       message: "Otorisasi berhasil.",
     });
   } catch (error) {
-    console.error("viewer-token-validation", error);
-    return json({ success: false, message: "Kesalahan koneksi sistem." }, 503);
+    console.error("viewer-token-validation", { stage: failureStage, message: error instanceof Error ? error.message : "unknown" });
+    return json({ success: false, message: "Kesalahan koneksi sistem (" + failureStage + ")." }, 503);
   }
 });
