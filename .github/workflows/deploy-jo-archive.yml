@@ -28,6 +28,14 @@ jobs:
         with:
           version: latest
 
+      - name: Setup Deno and type-check archive Edge Function
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check archive Edge Function
+        run: deno check supabase/functions/archive-closed-deliveries/index.ts
+
       - name: Deploy username-login
         run: supabase functions deploy username-login --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt --yes
         env:
@@ -61,6 +69,17 @@ jobs:
             -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
             --data '{"username":"bayua"}')
           cat /tmp/password-reset-smoke.json
+          test "$status" = "401"
+      - name: Smoke test scheduled archive endpoint rejects missing scheduler secret
+        env:
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_UadEwYUBc9Whu3m7VKrF6g_lAjS_Y4U
+        run: |
+          status=$(curl -sS -o /tmp/archive-cron-smoke.json -w "%{http_code}" \
+            -X POST "https://wcsjjdzxnwhzqkqninky.supabase.co/functions/v1/archive-closed-deliveries" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            --data '{"action":"scheduled-archive"}')
+          cat /tmp/archive-cron-smoke.json
           test "$status" = "401"
       - name: Smoke test archive endpoint rejects unauthenticated requests
         env:
