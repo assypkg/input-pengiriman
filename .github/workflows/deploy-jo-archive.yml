@@ -33,8 +33,9 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Type-check archive Edge Function
-        run: deno check supabase/functions/archive-closed-deliveries/index.ts
+      - name: Type-check archive Edge Functions
+        run: |
+          deno check supabase/functions/archive-closed-deliveries/index.ts
           deno check supabase/functions/viewer-archive-list/index.ts
 
       - name: Deploy username-login
