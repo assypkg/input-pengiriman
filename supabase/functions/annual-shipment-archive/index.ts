@@ -426,9 +426,9 @@ Deno.serve(async (req: Request) => {
       }
       const currentYear = jakartaToday().slice(0, 4);
       if (!byYear.has(currentYear)) byYear.set(currentYear, []);
-      const summaries = Array.from(byYear.entries())
-        .map(([year, yearRows]) => summarizeYear(yearRows, year))
-        .sort((a, b) => b.year.localeCompare(a.year));
+      let summaries = Array.from(byYear.entries())
+        .map(([year, yearRows]) => summarizeYear(yearRows, year));
+      summaries = await mergeDeletedAnnualSummaries(context, summaries);
       return json({ success: true, years: summaries, grouping: "delivery_date_year" });
     }
 
@@ -446,9 +446,9 @@ Deno.serve(async (req: Request) => {
       }
       const currentYear = jakartaToday().slice(0, 4);
       if (!byYear.has(currentYear)) byYear.set(currentYear, []);
-      const years = Array.from(byYear.entries())
-        .map(([rowYear, yearRows]) => summarizeYear(yearRows, rowYear))
-        .sort((a, b) => b.year.localeCompare(a.year));
+      let years = Array.from(byYear.entries())
+        .map(([rowYear, yearRows]) => summarizeYear(yearRows, rowYear));
+      years = await mergeDeletedAnnualSummaries({ url: Deno.env.get("SUPABASE_URL") || "", serviceKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "" }, years);
       return json({ success: true, years, grouping: "delivery_date_year" });
     }
 
