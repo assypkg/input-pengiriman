@@ -73,3 +73,14 @@ jobs:
             --data '{"action":"list"}')
           cat /tmp/archive-smoke.json
           test "$status" = "401"
+      - name: Smoke test Summary archive validates Viewer token and Firebase service
+        env:
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_UadEwYUBc9Whu3m7VKrF6g_lAjS_Y4U
+        run: |
+          status=$(curl -sS -o /tmp/viewer-archive-smoke.json -w "%{http_code}" \
+            -X POST "https://wcsjjdzxnwhzqkqninky.supabase.co/functions/v1/viewer-archive-list" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            --data '{"token":"INVALID-ARCHIVE-SMOKE","deviceId":"CI-DEV-0001","cursor":0,"limit":50}')
+          cat /tmp/viewer-archive-smoke.json
+          test "$status" = "401"
