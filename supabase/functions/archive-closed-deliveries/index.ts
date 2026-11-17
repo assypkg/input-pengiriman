@@ -209,11 +209,286 @@ async function listArchives(context: { url: string; serviceKey: string }) {
   return records;
 }
 
+
+
+type SupabaseArchiveContext = { url: string; serviceKey: string };
+
+function base64UrlEncode(value: string | Uint8Array): string {
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function firestoreValueToJs(value: any): any {
+  if (!value || typeof value !== "object") return null;
+  if ("nullValue" in value) return null;
+  if ("stringValue" in value) return value.stringValue;
+  if ("booleanValue" in value) return value.booleanValue;
+  if ("integerValue" in value) return Number(value.integerValue);
+  if ("doubleValue" in value) return Number(value.doubleValue);
+  if ("timestampValue" in value) return value.timestampValue;
+  if ("referenceValue" in value) return value.referenceValue;
+  if ("bytesValue" in value) return value.bytesValue;
+  if ("geoPointValue" in value) return value.geoPointValue;
+  if ("arrayValue" in value) {
+    return (value.arrayValue?.values || []).map(firestoreValueToJs);
+  }
+  if ("mapValue" in value) {
+    return firestoreFieldsToJs(value.mapValue?.fields || {});
+  }
+  return null;
+}
+
+function firestoreFieldsToJs(fields: Record<string, any>): Record<string, any> {
+  const output: Record<string, any> = {};
+  for (const [key, value] of Object.entries(fields || {})) {
+    output[key] = firestoreValueToJs(value);
+  }
+  return output;
+}
+
+async function getFirebaseAccessToken(): Promise<{ projectId: string; accessToken: string }> {
+  const raw = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_JSON");
+  if (!raw) throw new Error("Secret FIREBASE_SERVICE_ACCOUNT_JSON belum dipasang pada Supabase Edge Functions.");
+  let account: any;
+  try {
+    account = JSON.parse(raw);
+  } catch (_) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON bukan JSON service account yang valid.");
+  }
+  if (!account.project_id || !account.client_email || !account.private_key) {
+    throw new Error("Service account Firebase harus memiliki project_id, client_email, dan private_key.");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claims = base64UrlEncode(JSON.stringify({
+    iss: account.client_email,
+    scope: "https://www.googleapis.com/auth/datastore",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  }));
+  const unsignedJwt = header + "." + claims;
+  const pem = String(account.private_key).replace(/\\n/g, "\n");
+  const keyBody = pem
+    .replace("-----BEGIN PRIVATE KEY-----", "")
+    .replace("-----END PRIVATE KEY-----", "")
+    .replace(/\s/g, "");
+  const keyBytes = Uint8Array.from(atob(keyBody), (char) => char.charCodeAt(0));
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    keyBytes,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    privateKey,
+    new TextEncoder().encode(unsignedJwt),
+  );
+  const assertion = unsignedJwt + "." + base64UrlEncode(new Uint8Array(signature));
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+  });
+  const tokenResult = await tokenResponse.json().catch(() => ({}));
+  if (!tokenResponse.ok || !tokenResult.access_token) {
+    throw new Error("Gagal memperoleh akses Firestore dari Google: " +
+      String(tokenResult.error_description || tokenResult.error || "OAuth gagal.").slice(0, 200));
+  }
+  return { projectId: String(account.project_id), accessToken: String(tokenResult.access_token) };
+}
+
+async function listFirestoreShipmentDocuments(firebase: { projectId: string; accessToken: string }) {
+  const documents: Array<{ name: string; id: string; record: Record<string, any> }> = [];
+  let pageToken = "";
+  const baseUrl = "https://firestore.googleapis.com/v1/projects/" +
+    encodeURIComponent(firebase.projectId) +
+    "/databases/(default)/documents/production_data_v2";
+
+  do {
+    const url = new URL(baseUrl);
+    url.searchParams.set("pageSize", "1000");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const response = await fetch(url, {
+      headers: { Authorization: "Bearer " + firebase.accessToken },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error("Gagal membaca production_data_v2 dari Firestore: HTTP " +
+        response.status + " " + String(payload.error?.message || "").slice(0, 180));
+    }
+    for (const item of payload.documents || []) {
+      const name = String(item.name || "");
+      const id = name.split("/").pop() || "";
+      if (!id) continue;
+      documents.push({ name, id, record: { ...firestoreFieldsToJs(item.fields || {}), docId: id } });
+    }
+    pageToken = String(payload.nextPageToken || "");
+    if (documents.length > 20000) {
+      throw new Error("Jumlah dokumen Firestore melebihi batas aman 20.000 untuk satu siklus arsip.");
+    }
+  } while (pageToken);
+
+  return documents;
+}
+
+async function markFirestoreShipmentArchived(
+  firebase: { accessToken: string },
+  documentName: string,
+  archivedAt: string,
+) {
+  const url = new URL("https://firestore.googleapis.com/v1/" + documentName);
+  for (const field of ["isArchived", "archivedAt", "archivedBy", "archiveStatus", "archiveStorage"]) {
+    url.searchParams.append("updateMask.fieldPaths", field);
+  }
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: "Bearer " + firebase.accessToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      fields: {
+        isArchived: { booleanValue: true },
+        archivedAt: { timestampValue: archivedAt },
+        archivedBy: { stringValue: "system-scheduler" },
+        archiveStatus: { stringValue: "CLOSED" },
+        archiveStorage: { stringValue: "supabase" },
+      },
+    }),
+  });
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error("File sudah di Supabase tetapi metadata Firestore gagal diperbarui (HTTP " +
+      response.status + "): " + details.slice(0, 180));
+  }
+}
+
+function validCronSecret(provided: string, expected: string): boolean {
+  if (!provided || !expected || provided.length !== expected.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < expected.length; i++) {
+    mismatch |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+async function runScheduledArchive(context: SupabaseArchiveContext) {
+  const firebase = await getFirebaseAccessToken();
+  await ensurePrivateBucket(context);
+  const documents = await listFirestoreShipmentDocuments(firebase);
+  const summary = {
+    success: true,
+    scanned: documents.length,
+    archived: 0,
+    alreadyArchived: 0,
+    skippedAlreadyMarked: 0,
+    skippedOpen: 0,
+    skippedH1: 0,
+    skippedRestored: 0,
+    failed: 0,
+    dateWib: jakartaToday(),
+    errors: [] as string[],
+  };
+
+  const candidates = documents.filter(({ record }) => record.isArchived !== true);
+  for (let offset = 0; offset < candidates.length; offset += 10) {
+    const group = candidates.slice(offset, offset + 10);
+    const results = await Promise.all(group.map(async ({ name, id, record }) => {
+      try {
+        // A manual restore is an explicit request to return this JO to the active list.
+        // Do not immediately re-archive it on the next scheduled cycle.
+        if (record.restoredAt) return "skippedRestored";
+
+        const remaining = remainingQty(record);
+        if (!Number.isFinite(remaining)) {
+          throw new Error("Nilai sisa/order/hasil tidak valid.");
+        }
+        if (remaining > 0) return "skippedOpen";
+        if (!isHPlusOnePassedForServer(record.tanggal)) return "skippedH1";
+        const reason = eligibilityError(record);
+        if (reason) throw new Error(reason);
+
+        const path = PREFIX + id + ".json";
+        const existing = await getStoredRecord(context, path);
+        let archivedAt = "";
+        if (existing && existing.archiveState !== "RESTORED") {
+          archivedAt = String(existing.archivedAt || new Date().toISOString());
+          await markFirestoreShipmentArchived(firebase, name, archivedAt);
+          return "alreadyArchived";
+        }
+
+        archivedAt = new Date().toISOString();
+        await putStoredRecord(context, path, {
+          schemaVersion: 1,
+          sourceCollection: "production_data_v2",
+          sourceDocId: id,
+          archiveState: "ARCHIVED",
+          archivedAt,
+          archivedBy: "system-scheduler",
+          deliveryDate: record.tanggal,
+          hPlusOneDate: addDays(String(record.tanggal), 1),
+          record,
+        });
+        // Source Firestore document is retained; only archive metadata is updated
+        // after the private Storage write succeeds.
+        await markFirestoreShipmentArchived(firebase, name, archivedAt);
+        return "archived";
+      } catch (error) {
+        return { failed: id + " (" + String(record.jobOrder || "-") + "): " +
+          (error instanceof Error ? error.message : "Kesalahan tidak diketahui.") };
+      }
+    }));
+
+    for (const result of results) {
+      if (result === "archived") summary.archived++;
+      else if (result === "alreadyArchived") summary.alreadyArchived++;
+      else if (result === "skippedOpen") summary.skippedOpen++;
+      else if (result === "skippedH1") summary.skippedH1++;
+      else if (result === "skippedRestored") summary.skippedRestored++;
+      else if (typeof result === "object" && result && "failed" in result) {
+        summary.failed++;
+        if (summary.errors.length < 20) summary.errors.push(result.failed);
+      }
+    }
+  }
+  return summary;
+}
+
+function isHPlusOnePassedForServer(dateValue: unknown): boolean {
+  const hPlusOne = addDays(String(dateValue || ""), 1);
+  return !!hPlusOne && jakartaToday() > hPlusOne;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed." }, 405);
   try {
     const input = await req.json();
+
+    if (input.action === "scheduled-archive") {
+      const expectedSecret = Deno.env.get("ARCHIVE_CRON_SECRET") || "";
+      const providedSecret = req.headers.get("x-archive-cron-secret") || "";
+      if (!validCronSecret(providedSecret, expectedSecret)) {
+        return json({ success: false, error: "Scheduler tidak terotorisasi." }, 401);
+      }
+      const url = Deno.env.get("SUPABASE_URL");
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!url || !serviceKey) {
+        return json({ success: false, error: "Konfigurasi Supabase server belum lengkap." }, 500);
+      }
+      const result = await runScheduledArchive({ url, serviceKey });
+      return json(result);
+    }
+
     const auth = await authorize(req);
     if (!("url" in auth) || !("serviceKey" in auth) || !("profile" in auth)) {
       if ("error" in auth && auth.error instanceof Response) return auth.error;
