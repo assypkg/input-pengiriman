@@ -12,6 +12,7 @@ on:
       - "supabase/functions/archive-closed-deliveries/**"
       - "supabase/functions/validate-viewer-token/**"
       - "supabase/functions/viewer-archive-list/**"
+      - "supabase/functions/annual-shipment-archive/**"
       - "supabase/functions/admin-reset-user-password/**"
       - "supabase/config.toml"
       - ".github/workflows/deploy-jo-archive.yml"
@@ -37,6 +38,7 @@ jobs:
         run: |
           deno check supabase/functions/archive-closed-deliveries/index.ts
           deno check supabase/functions/viewer-archive-list/index.ts
+          deno check supabase/functions/annual-shipment-archive/index.ts
 
       - name: Deploy username-login
         run: supabase functions deploy username-login --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt --yes
@@ -51,6 +53,23 @@ jobs:
         run: supabase functions deploy validate-viewer-token --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt --yes
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy annual-shipment-archive
+        run: supabase functions deploy annual-shipment-archive --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt --yes
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Smoke test annual archive refuses anonymous Admin action
+        env:
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_UadEwYUBc9Whu3m7VKrF6g_lAjS_Y4U
+        run: |
+          status=$(curl -sS -o /tmp/annual-archive-smoke.json -w "%{http_code}" \
+            -X POST "https://wcsjjdzxnwhzqkqninky.supabase.co/functions/v1/annual-shipment-archive" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            --data '{"action":"admin-summary"}')
+          cat /tmp/annual-archive-smoke.json
+          test "$status" = "401"
 
       - name: Deploy viewer-archive-list
         run: supabase functions deploy viewer-archive-list --project-ref wcsjjdzxnwhzqkqninky --no-verify-jwt --yes
