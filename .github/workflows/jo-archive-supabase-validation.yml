@@ -88,6 +88,11 @@ jobs:
               'archiveStorage: "supabase"',
               "arsip-pengiriman",
               'id="annualArchivePanel"',
+              'id="archiveDataTabPane"',
+              'id="annualArchiveTabPane"',
+              'id="archiveDataTabBtn"',
+              'id="archiveAnnualTabBtn"',
+              "window.pilihTabArsipJO",
               'annualArchiveApi("admin-summary")',
               "window.downloadAnnualBackup",
               "window.verifikasiBackupTahunan",
@@ -106,6 +111,28 @@ jobs:
           PY
           node --check /tmp/admin-input.js
           if [ -f /tmp/admin-input.mjs ]; then node --check /tmp/admin-input.mjs; fi
+
+      - name: Validate archive tab separation and lazy annual loading
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("index.html").read_text(encoding="utf-8")
+          required = [
+              'onclick="pilihTabArsipJO(\'data\')"',
+              'onclick="pilihTabArsipJO(\'annual\')"',
+              'if (isAnnual) loadAnnualArchiveSummary();',
+              'window.pilihTabArsipJO("data");',
+          ]
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit("Missing archive tab marker: " + marker)
+          open_fn = source[source.index("window.bukaArsipJO = async function()"):source.index("window.tutupArsipJO = function()")]
+          if "loadAnnualArchiveSummary()" in open_fn:
+              raise SystemExit("Annual summary must not load when the archive modal first opens.")
+          if 'id="archiveDataTabPane"' not in source or 'id="annualArchiveTabPane"' not in source:
+              raise SystemExit("Both archive tab panes are required.")
+          print("Data Arsip is the default tab; annual summary is lazy-loaded only on selection.")
+          PY
 
       - name: Validate annual backup verification and cloud purge guardrails
         run: |
