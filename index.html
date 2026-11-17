@@ -603,8 +603,10 @@
                     <input type="date" id="archiveToDate" class="search-box" onchange="renderArsipJO()">
                 </div>
                 <button class="btn-restore-archive" onclick="unduhPdfArsip()" style="padding:9px 13px;font-size:11px;">Unduh PDF</button>
+                <button class="btn-restore-archive" id="btnAuditArsipSupabase" onclick="verifikasiArsipSupabase()" style="padding:9px 13px;font-size:11px;background:#203764;">Verifikasi Supabase</button>
                 <button class="btn-cancel-modal" onclick="resetFilterArsipJO()" style="padding:9px 13px;font-size:11px;">Reset Filter</button>
             </div>
+            <div id="archiveAuditResult" aria-live="polite" style="display:none;white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;color:#334155;background:#f8fafc;border:1px solid #dbe3ee;padding:9px;border-radius:6px;margin-bottom:8px;"></div>
             <div id="archiveExportFilterInfo" style="font-size:10px;color:#718093;margin:-3px 0 9px;">Filter tanggal menggunakan tanggal arsip (WIB). Pencarian teks mencakup nama produk, JO, PO#, dan kode item.</div>
             <div class="archive-table-wrap">
                 <table class="archive-table">
@@ -2068,6 +2070,89 @@
                     (!toDate || (archiveDate && archiveDate <= toDate));
             }).sort((a, b) => String(b.archivedAt || "").localeCompare(String(a.archivedAt || "")));
         }
+
+        window.verifikasiArsipSupabase = async function() {
+            const button = document.getElementById("btnAuditArsipSupabase");
+            const resultBox = document.getElementById("archiveAuditResult");
+            const targets = database.filter(item => item && item.isArchived === true && item.docId);
+            if (!targets.length) {
+                if (resultBox) {
+                    resultBox.style.display = "block";
+                    resultBox.textContent = "Tidak ada dokumen berpenanda arsip di Firestore untuk diperiksa.";
+                }
+                return;
+            }
+
+            const originalLabel = button ? button.textContent : "Verifikasi Supabase";
+            if (button) { button.disabled = true; button.textContent = "Memeriksa..."; }
+            if (resultBox) {
+                resultBox.style.display = "block";
+                resultBox.textContent = "Mencocokkan " + targets.length.toLocaleString("id-ID") +
+                    " dokumen Firestore dengan file private Supabase Storage...";
+            }
+
+            try {
+                const matched = [], missing = [], mismatched = [], invalid = [];
+                for (let i = 0; i < targets.length; i += 400) {
+                    const batch = targets.slice(i, i + 400);
+                    const response = await callArchiveApi({
+                        action: "audit",
+                        records: batch.map(item => ({
+                            sourceDocId: item.docId,
+                            data: {
+                                docId: item.docId,
+                                tanggal: item.tanggal,
+                                jobOrder: item.jobOrder,
+                                poNum: item.poNum,
+                                kodeItem: item.kodeItem,
+                                produk: item.produk,
+                                order: item.order,
+                                hasil: item.hasil,
+                                sisa: item.sisa,
+                                ket: item.ket
+                            }
+                        }))
+                    });
+                    matched.push(...(response.matched || []));
+                    missing.push(...(response.missing || []));
+                    mismatched.push(...(response.mismatched || []));
+                    invalid.push(...(response.invalid || []));
+                }
+
+                const lines = [
+                    "HASIL VERIFIKASI ARSIP FIRESTORE vs SUPABASE",
+                    "Total dokumen diperiksa: " + targets.length.toLocaleString("id-ID"),
+                    "Cocok: " + matched.length.toLocaleString("id-ID"),
+                    "File tidak ditemukan di Supabase: " + missing.length.toLocaleString("id-ID"),
+                    "Data berbeda: " + mismatched.length.toLocaleString("id-ID"),
+                    "Identitas tidak valid: " + invalid.length.toLocaleString("id-ID"),
+                    "",
+                    "Pemeriksaan bersifat READ-ONLY. Tidak ada data yang diubah atau dihapus."
+                ];
+                if (missing.length) {
+                    lines.push("", "FILE TIDAK DITEMUKAN (maks. 20):");
+                    missing.slice(0, 20).forEach(item => lines.push(
+                        "JO " + (item.jobOrder || "-") + " | ID " + item.sourceDocId
+                    ));
+                }
+                if (mismatched.length) {
+                    lines.push("", "DATA BERBEDA (maks. 20):");
+                    mismatched.slice(0, 20).forEach(item => lines.push(
+                        "JO " + (item.jobOrder || "-") + " | " + item.fields.join(", ") + " | ID " + item.sourceDocId
+                    ));
+                }
+                if (invalid.length) {
+                    lines.push("", "IDENTITAS TIDAK VALID (maks. 20):");
+                    invalid.slice(0, 20).forEach(item => lines.push(item.sourceDocId + " | " + item.reason));
+                }
+                if (resultBox) resultBox.textContent = lines.join("\n");
+            } catch (error) {
+                console.error("Verifikasi arsip Supabase gagal:", error);
+                if (resultBox) resultBox.textContent = "Verifikasi gagal: " + (error.message || "Kesalahan tidak diketahui.");
+            } finally {
+                if (button) { button.disabled = false; button.textContent = originalLabel; }
+            }
+        };
 
         window.resetFilterArsipJO = function() {
             ["searchArsipJO", "archiveFromDate", "archiveToDate"].forEach(id => {
