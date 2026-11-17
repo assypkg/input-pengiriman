@@ -1811,7 +1811,7 @@
                                 await addDoc(collection(window.db, "production_data_v2"), {
                                     tanggal: item.tanggal, jobOrder: item.jobOrder, poNum: item.poNum || item.po || '-',
                                     kodeItem: item.kodeItem, produk: item.produk, order: item.order, hasil: item.hasil,
-                                    sisa: item.sisa, ket: item.ket || '', createdAt: serverTimestamp()
+                                    sisa: item.sisa, ket: item.ket || '', isArchived: false, createdAt: serverTimestamp()
                                 });
                                 sukses++;
                             }
