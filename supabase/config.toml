@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.admin-reset-user-password]
 verify_jwt = false
+
+[functions.validate-viewer-token]
+verify_jwt = false
+
+[functions.viewer-archive-list]
+verify_jwt = false
