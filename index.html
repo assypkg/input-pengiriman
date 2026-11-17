@@ -607,13 +607,13 @@
                 <button class="btn-cancel-modal" onclick="resetFilterArsipJO()" style="padding:9px 13px;font-size:11px;">Reset Filter</button>
             </div>
             <div id="archiveAuditResult" aria-live="polite" style="display:none;white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;color:#334155;background:#f8fafc;border:1px solid #dbe3ee;padding:9px;border-radius:6px;margin-bottom:8px;"></div>
-            <div id="archiveExportFilterInfo" style="font-size:10px;color:#718093;margin:-3px 0 9px;">Filter tanggal menggunakan tanggal arsip (WIB). Pencarian teks mencakup nama produk, JO, PO#, dan kode item.</div>
+            <div id="archiveExportFilterInfo" style="font-size:10px;color:#718093;margin:-3px 0 9px;">Filter tanggal menggunakan tanggal arsip (WIB). Pencarian teks mencakup nama produk, JO, PO#, kode item, dan keterangan.</div>
             <div class="archive-table-wrap">
                 <table class="archive-table">
                     <thead>
                         <tr>
                             <th>Tanggal Kirim</th><th>Job Order</th><th>PO#</th><th>Kode Item</th>
-                            <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Tanggal Arsip</th><th>Aksi</th>
+                            <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Keterangan</th><th>Tanggal Arsip</th><th>Aksi</th>
                         </tr>
                     </thead>
                     <tbody id="archiveTableBody"></tbody>
@@ -2111,7 +2111,7 @@
             const fromDate = String(document.getElementById("archiveFromDate")?.value || "").trim();
             const toDate = String(document.getElementById("archiveToDate")?.value || "").trim();
             return archiveCache.filter(item => {
-                const haystack = [item.jobOrder, item.poNum, item.kodeItem, item.produk]
+                const haystack = [item.jobOrder, item.poNum, item.kodeItem, item.produk, item.ket]
                     .map(value => String(value || "").toLowerCase()).join(" ");
                 const archiveDate = tanggalArsipWIB(item.archivedAt);
                 return haystack.includes(keyword) &&
@@ -2229,7 +2229,7 @@
             body.innerHTML = "";
             if (fromDate && toDate && fromDate > toDate) {
                 const tr = document.createElement("tr"), td = document.createElement("td");
-                td.colSpan = 10; td.style.textAlign = "center"; td.style.padding = "18px";
+                td.colSpan = 11; td.style.textAlign = "center"; td.style.padding = "18px";
                 td.style.color = "#c0392b"; td.textContent = "Tanggal awal tidak boleh melewati tanggal akhir.";
                 tr.appendChild(td); body.appendChild(tr); return;
             }
@@ -2251,6 +2251,7 @@
                     Number(item.order || 0).toLocaleString("id-ID"),
                     Number(item.hasil || 0).toLocaleString("id-ID"),
                     Number(nilaiSisaArsip(item) || 0).toLocaleString("id-ID"),
+                    item.ket || "-",
                     item.archivedAt ? new Date(item.archivedAt).toLocaleString("id-ID") : "-"
                 ].forEach(value => {
                     const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
@@ -2331,6 +2332,7 @@
                     "<td class=\"num\">" + Number(item.order || 0).toLocaleString("id-ID") + "</td>" +
                     "<td class=\"num\">" + Number(item.hasil || 0).toLocaleString("id-ID") + "</td>" +
                     "<td class=\"num\">" + Number(nilaiSisaArsip(item) || 0).toLocaleString("id-ID") + "</td>" +
+                    "<td>" + escapeHtml(item.ket || "-") + "</td>" +
                     "<td>" + escapeHtml(archivedAt) + "</td></tr>";
             }).join("");
 
@@ -2366,7 +2368,7 @@
                 </div>
                 <table><thead><tr>
                     <th>No.</th><th>Tanggal Kirim</th><th>Job Order</th><th>PO#</th><th>Kode Item</th>
-                    <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Tanggal Arsip (WIB)</th>
+                    <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Keterangan</th><th>Tanggal Arsip (WIB)</th>
                 </tr></thead><tbody>${tableRows}</tbody></table>
                 <div class="footer"><span>Dicetak dari Aplikasi Input Pengiriman</span><span>Waktu cetak: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB</span></div>
                 </body></html>`;
