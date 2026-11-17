@@ -631,6 +631,17 @@
             #detailTanggalModal .active-record-card { padding:10px; }
         }
 
+            /* Status-aware number colors across active and archived cards. */
+        .active-record-card.open .active-record-qty.result strong { color:#253858 !important; }
+        .active-record-card.open .active-record-qty.remaining strong { color:#d94b40 !important; }
+        .active-record-card.closed .active-record-qty.result strong { color:#27ae60 !important; }
+        .active-record-card.closed .active-record-qty.remaining strong { color:#253858 !important; }
+        .archive-mobile-qty.is-result strong { color:#27ae60 !important; }
+        .archive-mobile-qty.is-shortage strong { color:#253858 !important; }
+        .hasil-open { color:#253858 !important; font-weight:750; }
+        .hasil-closed { color:#27ae60 !important; font-weight:750; }
+        .kekurangan-open { color:#d94b40 !important; font-weight:750; }
+        .kekurangan-closed { color:#253858 !important; font-weight:750; }
     </style>
 </head>
 <body>
@@ -763,7 +774,7 @@
                 <input type="number" id="hasil" placeholder="Hasil assy" oninput="hitungSisa()" required>
             </div>
             <div class="input-box">
-                <label>Sisa Order (Otomatis)</label>
+                <label>Kekurangan Order (Otomatis)</label>
                 <input type="number" id="sisa" class="readonly" placeholder="0" readonly>
             </div>
             <div class="input-box" style="flex: 2;">
@@ -844,7 +855,7 @@
                     <th>Nama Produk</th>
                     <th>Order</th>
                     <th>Hasil</th>
-                    <th>Sisa</th>
+                    <th>Kekurangan</th>
                     <th>Keterangan</th>
                     <th>Status</th>
                     <th style="width: 110px;">Aksi</th>
@@ -941,7 +952,7 @@
                     <thead>
                         <tr>
                             <th>Tanggal Kirim</th><th>Job Order</th><th>PO#</th><th>Kode Item</th>
-                            <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Keterangan</th><th>Tanggal Arsip</th><th>Aksi</th>
+                            <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Kekurangan</th><th>Keterangan</th><th>Tanggal Arsip</th><th>Aksi</th>
                         </tr>
                     </thead>
                     <tbody id="archiveTableBody"></tbody>
@@ -969,7 +980,7 @@
                             <th>Nama Produk</th>
                             <th>Order</th>
                             <th>Hasil</th>
-                            <th>Sisa</th>
+                            <th>Kekurangan</th>
                             <th>Status</th>
                         </tr>
                     </thead>
@@ -1919,7 +1930,7 @@
                         pdfSectionDiv = document.createElement('div');
                         pdfSectionDiv.className = 'pdf-section';
                         pdfHtmlContent = `<h3>Laporan Pengiriman: ${formatHariDanTanggal(tgl)}</h3>`;
-                        pdfHtmlContent += `<table><thead><tr><th>Job Order</th><th>PO#</th><th>Kode Item</th><th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Keterangan</th><th>Status</th></tr></thead><tbody>`;
+                        pdfHtmlContent += `<table><thead><tr><th>Job Order</th><th>PO#</th><th>Kode Item</th><th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Kekurangan</th><th>Keterangan</th><th>Status</th></tr></thead><tbody>`;
                     }
 
                     itemsForDate.forEach(item => {
@@ -1949,8 +1960,8 @@
                             <td>${item.kodeItem || '-'}</td>
                             <td><strong>${item.produk || '-'}</strong></td>
                             <td>${Number(item.order || 0).toLocaleString('en-US')}</td>
-                            <td>${Number(item.hasil || 0).toLocaleString('en-US')}</td>
-                            <td class="${sisaClass}">${nilaiSisaPengirimanAktif(item).toLocaleString('en-US')}</td>
+                            <td class="${isClosed ? 'hasil-closed' : 'hasil-open'}">${Number(item.hasil || 0).toLocaleString('en-US')}</td>
+                            <td class="${isClosed ? 'kekurangan-closed' : 'kekurangan-open'}">${remainingQty.toLocaleString('en-US')}</td>
                             <td><small>${item.ket || '-'}</small></td>
                             <td>${statusInfo}</td>
                             <td>${actionBtn}</td>
@@ -1965,16 +1976,13 @@
                             const identity = document.createElement('div');
                             identity.className = 'active-record-identity';
 
-                            const joLabel = document.createElement('span');
-                            joLabel.className = 'active-record-label';
-                            joLabel.textContent = 'JO';
                             const joNumber = document.createElement('strong');
                             joNumber.className = 'active-record-jo';
                             joNumber.textContent = item.jobOrder || '-';
                             const fgCode = document.createElement('span');
                             fgCode.className = 'active-record-fg';
                             fgCode.textContent = item.kodeItem || '-';
-                            identity.append(joLabel, joNumber, fgCode);
+                            identity.append(joNumber, fgCode);
 
                             const statusBadge = document.createElement('span');
                             statusBadge.className = `active-record-status ${isClosed ? 'closed' : 'open'}`;
@@ -1990,7 +1998,7 @@
                             [
                                 ['ORDER', item.order, ''],
                                 ['HASIL', item.hasil, 'result'],
-                                ['SISA', remainingQty, 'remaining']
+                                ['KEKURANGAN', remainingQty, 'remaining']
                             ].forEach(([label, value, kind]) => {
                                 const metric = document.createElement('div');
                                 metric.className = 'active-record-qty ' + kind;
@@ -2196,16 +2204,13 @@
                     head.className = "active-record-header";
                     const identity = document.createElement("div");
                     identity.className = "active-record-identity";
-                    const joLabel = document.createElement("span");
-                    joLabel.className = "active-record-label";
-                    joLabel.textContent = "JO";
                     const jo = document.createElement("strong");
                     jo.className = "active-record-jo";
                     jo.textContent = item.jobOrder || "-";
                     const fg = document.createElement("span");
                     fg.className = "active-record-fg";
                     fg.textContent = item.kodeItem || "-";
-                    identity.append(joLabel, jo, fg);
+                    identity.append(jo, fg);
 
                     const status = document.createElement("span");
                     status.className = `active-record-status ${isClosed ? "closed" : "open"}`;
@@ -2221,7 +2226,7 @@
                     [
                         ["ORDER", item.order, ""],
                         ["HASIL", item.hasil, "result"],
-                        ["SISA", remaining, "remaining"]
+                        ["KEKURANGAN", remaining, "remaining"]
                     ].forEach(([label, value, kind]) => {
                         const metric = document.createElement("div");
                         metric.className = "active-record-qty " + kind;
@@ -2789,8 +2794,10 @@
                     item.kodeItem || "-", item.produk || "-",
                     order.toLocaleString("id-ID"), hasil.toLocaleString("id-ID"),
                     sisa.toLocaleString("id-ID"), item.ket || "-", formatArchiveTime(item)
-                ].forEach(value => {
+                ].forEach((value, index) => {
                     const cell = document.createElement("td");
+                    if (index === 6) cell.className = "hasil-closed";
+                    if (index === 7) cell.className = "kekurangan-closed";
                     cell.textContent = String(value);
                     tr.appendChild(cell);
                 });
@@ -2864,7 +2871,7 @@
                     product.textContent = item.produk || "-";
                     const qtyGrid = document.createElement("div");
                     qtyGrid.className = "archive-mobile-qty-grid";
-                    [["Order", order, ""], ["Hasil", hasil, "is-result"], ["Sisa", sisa, ""]]
+                    [["Order", order, ""], ["Hasil", hasil, "is-result"], ["Kekurangan", sisa, "is-shortage"]]
                         .forEach(([label, value, extraClass]) => {
                             const metric = document.createElement("div");
                             metric.className = "archive-mobile-qty " + extraClass;
@@ -3010,7 +3017,7 @@
                 </div>
                 <table><thead><tr>
                     <th>No.</th><th>Tanggal Kirim</th><th>Job Order</th><th>PO#</th><th>Kode Item</th>
-                    <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Keterangan</th><th>Tanggal Arsip (WIB)</th>
+                    <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Kekurangan</th><th>Keterangan</th><th>Tanggal Arsip (WIB)</th>
                 </tr></thead><tbody>${tableRows}</tbody></table>
                 <div class="footer"><span>Dicetak dari Aplikasi Input Pengiriman</span><span>Waktu cetak: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB</span></div>
                 </body></html>`;
