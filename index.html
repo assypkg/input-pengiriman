@@ -931,7 +931,8 @@
                 updateGlobalKPI();
                 updateArchiveCount();
                 await backfillActiveArchiveFlags(snapshot);
-                window.prosesArsipOtomatis();
+                // Automatic archiving is now handled by the protected server scheduler.
+                // Manual Admin archive remains available through arsipkanSemuaClosed().
             }, (error) => { console.error(error); });
 
             onSnapshot(doc(window.db, "master_data", "uploaded_file"), (docSnap) => {
@@ -1878,7 +1879,7 @@
         }
 
         function isEligibleForArchive(item) {
-            return !!item && item.isArchived !== true &&
+            return !!item && item.isArchived !== true && !item.restoredAt &&
                 isClosedForArchive(item) && isHPlusOnePassed(item);
         }
 
@@ -1943,10 +1944,7 @@
             }
         };
 
-        // Pemeriksaan ulang berkala jika halaman tetap terbuka melewati pergantian hari.
-        window.setInterval(() => {
-            if (typeof window.prosesArsipOtomatis === "function") window.prosesArsipOtomatis();
-        }, 15 * 60 * 1000);
+        // Arsip otomatis dipicu server scheduler, bukan timer browser Admin.
 
         async function callArchiveApi(payload) {
             const accessToken = sessionStorage.getItem("assembly_admin_access_token");
