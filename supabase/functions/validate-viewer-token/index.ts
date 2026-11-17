@@ -30,10 +30,18 @@ function pemToDer(pem: string): ArrayBuffer {
 }
 
 function decodeFirebaseServiceAccount(raw: string): any {
-  const candidates: string[] = [raw.trim()];
+  let cleaned = raw.trim().replace(/^\uFEFF/, "");
+  cleaned = cleaned.replace(/^FIREBASE_SERVICE_ACCOUNT_JSON\s*=\s*/i, "");
+  if ((cleaned.startsWith("'") && cleaned.endsWith("'")) ||
+      (cleaned.startsWith('"') && cleaned.endsWith('"'))) {
+    cleaned = cleaned.slice(1, -1);
+  }
+
+  const candidates: string[] = [cleaned];
   try {
-    const base64Payload = raw.trim().replace(/^base64:/i, "").replace(/\s/g, "");
-    candidates.push(atob(base64Payload));
+    const base64Payload = cleaned.replace(/^base64:/i, "").replace(/\s/g, "");
+    const normalizedBase64 = base64Payload.replace(/-/g, "+").replace(/_/g, "/");
+    candidates.push(atob(normalizedBase64));
   } catch (_) {}
 
   for (const candidate of candidates) {
@@ -46,13 +54,30 @@ function decodeFirebaseServiceAccount(raw: string): any {
           typeof parsed.private_key === "string") {
         return parsed;
       }
-      if (parsed?.service_account && typeof parsed.service_account === "object") {
+      if (parsed && parsed.service_account && typeof parsed.service_account === "object") {
         const nested = parsed.service_account;
         if (nested.project_id && nested.client_email && nested.private_key) return nested;
       }
     } catch (_) {}
   }
-  throw new Error("Firebase service account secret must be JSON or Base64 JSON with project_id, client_email, and private_key.");
+  throw new Error("Firebase service account secret format is not recognized.");
+}
+
+function getFirebaseServiceAccount(): any {
+  const names = [
+    "FIREBASE_SERVICE_ACCOUNT_JSON",
+    "FIREBASE_SERVICE_ACCOUNT",
+    "FIREBASE_SERVICE_ACCOUNT_BASE64",
+    "GOOGLE_SERVICE_ACCOUNT_JSON",
+  ];
+  for (const name of names) {
+    const value = Deno.env.get(name);
+    if (!value) continue;
+    try {
+      return decodeFirebaseServiceAccount(value);
+    } catch (_) {}
+  }
+  throw new Error("No valid Firebase service account JSON secret found.");
 }
 
 async function getGoogleAccessToken(serviceAccount: any): Promise<string> {
@@ -189,10 +214,8 @@ Deno.serve(async (req: Request) => {
 
     failureStage = "load_firebase_credentials";
     const projectId = Deno.env.get("FIREBASE_PROJECT_ID") || "summarypengiriman";
-    const serviceAccountRaw = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_JSON");
-    if (!serviceAccountRaw) return json({ success: false, message: "Konfigurasi Firebase server belum tersedia." }, 500);
     failureStage = "parse_firebase_credentials";
-    const serviceAccount = decodeFirebaseServiceAccount(serviceAccountRaw);
+    const serviceAccount = getFirebaseServiceAccount();
     if (serviceAccount.project_id !== projectId || !serviceAccount.client_email || !serviceAccount.private_key) {
       return json({ success: false, message: "Project Firebase tidak sesuai." }, 500);
     }
