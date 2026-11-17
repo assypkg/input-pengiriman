@@ -241,6 +241,43 @@ async function putStoredJson(context: Context, path: string, value: unknown): Pr
   });
   if (!response.ok) throw new Error("Gagal menyimpan manifest tahunan ke Supabase Storage (HTTP " + response.status + ").");
 }
+
+async function listAnnualManifests(context: Context) {
+  const files: any[] = [];
+  for (let offset = 0; offset < 5000; offset += 1000) {
+    const response = await storageRequest(context, "/object/list/" + BUCKET, {
+      method: "POST",
+      body: JSON.stringify({ prefix: MANIFEST_PREFIX, limit: 1000, offset }),
+    });
+    if (!response.ok) throw new Error("Gagal membaca daftar manifest tahunan.");
+    const batch = await response.json();
+    if (!Array.isArray(batch)) throw new Error("Daftar manifest tahunan tidak valid.");
+    files.push(...batch.filter((f: any) => f && typeof f.name === "string" && f.name.endsWith(".json")));
+    if (batch.length < 1000) return files;
+  }
+  throw new Error("Jumlah manifest tahunan melebihi batas aman.");
+}
+
+async function mergeDeletedAnnualSummaries(context: Context, years: any[]) {
+  const files = await listAnnualManifests(context);
+  const known = new Set(years.map((item) => String(item.year)));
+  for (const file of files) {
+    const path = String(file.name).startsWith(MANIFEST_PREFIX) ? String(file.name) : MANIFEST_PREFIX + file.name;
+    const manifest = await getStoredJson(context, path);
+    const year = validYear(manifest?.year);
+    if (!year || manifest.state !== "DELETED" || known.has(year) || !manifest.summary) continue;
+    years.push({
+      ...manifest.summary,
+      year,
+      status: "BACKED_UP",
+      backupState: "DELETED",
+      recordsSha256: manifest.recordsSha256 || null,
+      recordsCount: Number(manifest.recordsCount || 0),
+    });
+    known.add(year);
+  }
+  return years.sort((a, b) => String(b.year).localeCompare(String(a.year)));
+}
 function summarizeYear(rows: Array<{ id: string; record: Record<string, any> }>, year: string): any {
   const jo = new Map<string, { open: boolean }>();
   let totalOrder = 0, totalHasil = 0, totalSisa = 0;
