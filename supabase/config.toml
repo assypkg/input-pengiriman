@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.viewer-archive-list]
 verify_jwt = false
+
+[functions.annual-shipment-archive]
+verify_jwt = false
