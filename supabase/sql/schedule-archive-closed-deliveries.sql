@@ -67,7 +67,22 @@ select cron.schedule(
   $job$
 );
 
--- Verify that the daily job is active.
+-- Verify that the daily job is active and confirm the database timezone.
+select current_setting('TimeZone') as database_timezone;
+
 select jobid, jobname, schedule, active
 from cron.job
 where jobname = 'daily-archive-closed-deliveries';
+
+-- After the first scheduled run, use this query to inspect execution history.
+select
+  j.jobname,
+  r.status,
+  r.start_time,
+  r.end_time,
+  r.return_message
+from cron.job_run_details r
+join cron.job j on j.jobid = r.jobid
+where j.jobname = 'daily-archive-closed-deliveries'
+order by r.start_time desc
+limit 10;
