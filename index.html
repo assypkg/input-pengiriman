@@ -297,6 +297,59 @@
         .archive-table th, .archive-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
         .archive-table th { position: sticky; top: 0; background: var(--primary); color: white; z-index: 2; }
         .btn-restore-archive { background: #0f766e; padding: 5px 9px; font-size: 10px; }
+        .annual-archive-panel { margin: 0 0 14px; padding: 14px; }
+        .annual-year-header { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+        .annual-year-subtitle { color:#64748b; font-size:11px; line-height:1.4; }
+        .annual-refresh-btn { flex:0 0 auto; }
+        .annual-year-table-wrap { width:100%; margin-top:12px; overflow:hidden; border:1px solid var(--border-color); border-radius:7px; background:white; }
+        .annual-year-desktop { width:100%; table-layout:fixed; margin:0; }
+        .annual-year-desktop th, .annual-year-desktop td { white-space:normal; overflow-wrap:anywhere; word-break:normal; padding:9px 7px; }
+        .annual-year-cards { display:none; }
+        .annual-year-card { background:#fff; border:1px solid #dbe3ee; border-left:4px solid var(--primary); border-radius:8px; padding:11px; min-width:0; }
+        .annual-year-card.is-final { border-left-color:var(--success); }
+        .annual-year-card.is-waiting { border-left-color:var(--warning); }
+        .annual-year-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; padding-bottom:8px; border-bottom:1px solid #eef2f7; }
+        .annual-year-card-head strong { color:var(--primary); font-size:15px; }
+        .annual-year-card-status { color:#475569; font-size:10px; font-weight:700; text-align:right; overflow-wrap:anywhere; max-width:68%; }
+        .annual-year-card-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:9px; }
+        .annual-year-metric { min-width:0; background:#f8fafc; border-radius:6px; padding:7px 8px; }
+        .annual-year-metric span { display:block; color:#64748b; font-size:9px; font-weight:700; text-transform:uppercase; }
+        .annual-year-metric strong { display:block; margin-top:3px; color:var(--primary); font-size:14px; overflow-wrap:anywhere; }
+        .annual-year-select-row { display:grid; grid-template-columns:minmax(180px,1fr) minmax(0,2fr); gap:12px; align-items:end; margin-top:13px; }
+        .annual-year-select-field { min-width:0; }
+        .annual-year-select-field select { width:100%; min-width:0; }
+        .annual-year-status { min-width:0; color:#475569; font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
+        .annual-selected-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:12px; margin-bottom:12px; }
+        .annual-selected-kpis .kpi-card { min-width:0; padding:10px 11px; }
+        .annual-selected-kpis .kpi-value { font-size:17px; overflow-wrap:anywhere; }
+        .annual-action-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:8px; }
+        .annual-action-grid button { width:100%; min-width:0; min-height:42px; padding:8px 9px; font-size:11px; white-space:normal; line-height:1.25; float:none; }
+        .annual-action-grid button:disabled { opacity:.5; cursor:not-allowed; }
+        .annual-file-name, .annual-archive-message { font-size:10px; color:#64748b; line-height:1.45; overflow-wrap:anywhere; }
+        .annual-archive-message { margin-top:7px; }
+        .annual-year-empty { text-align:center; background:#fff; color:#718093; border:1px solid #dbe3ee; border-radius:8px; padding:14px; font-size:11px; }
+        @media (max-width:850px) {
+            .annual-archive-panel { padding:11px; margin-bottom:12px; }
+            .annual-year-header { align-items:flex-start; }
+            .annual-refresh-btn { width:100%; }
+            .annual-year-table-wrap { display:none; }
+            .annual-year-cards { display:grid; grid-template-columns:1fr; gap:8px; margin-top:11px; }
+            .annual-year-select-row { grid-template-columns:1fr; gap:7px; }
+            .annual-selected-kpis { grid-template-columns:1fr 1fr; gap:7px; }
+            .annual-selected-kpis .kpi-card { padding:9px; }
+            .annual-selected-kpis .kpi-title { font-size:9px; }
+            .annual-selected-kpis .kpi-value { font-size:16px; }
+            .annual-action-grid { grid-template-columns:1fr 1fr; gap:7px; }
+            .annual-action-grid button { min-height:48px; padding:8px; }
+            #btnAnnualPurge { grid-column:1 / -1; }
+        }
+        @media (max-width:380px) {
+            .annual-year-card-grid { gap:6px; }
+            .annual-year-metric strong { font-size:13px; }
+            .annual-action-grid { grid-template-columns:1fr; }
+            #btnAnnualPurge { grid-column:auto; }
+        }
+
 
         #pdfContainer { display: none; }
 
@@ -511,48 +564,6 @@
             <input type="file" id="fileInput" style="display: none;" accept=".json" onchange="restoreBackup(event)">
         </div>
 
-        <div class="summary-box" id="annualArchivePanel" style="margin-top:14px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-                <div>
-                    <div class="section-title" style="margin-bottom:3px;">REKAP TAHUNAN & FINALISASI ARSIP</div>
-                    <div style="font-size:10px;color:#64748b;">Pengelompokan mengikuti tanggal pengiriman, bukan awalan Job Order.</div>
-                </div>
-                <button type="button" class="btn-archive-view" id="btnAnnualRefresh" onclick="loadAnnualArchiveSummary()">Muat Ulang Rekap</button>
-            </div>
-            <div style="overflow-x:auto;margin-top:12px;">
-                <table class="desktop-table" style="margin-top:0;background:white;min-width:650px;">
-                    <thead><tr>
-                        <th>Tahun</th><th>Total JO</th><th>Closed</th><th>Open</th><th>Total Hasil</th><th>Status Tahunan</th>
-                    </tr></thead>
-                    <tbody id="annualYearTableBody">
-                        <tr><td colspan="6" style="text-align:center;color:#718093;">Memuat rekap tahunan...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-            <div style="display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin-top:13px;">
-                <div style="min-width:150px;flex:1;">
-                    <label for="annualYearSelect">Pilih Tahun</label>
-                    <select id="annualYearSelect" class="search-box" style="width:100%;" onchange="pilihTahunAnnual()"></select>
-                </div>
-                <div style="flex:2;min-width:220px;font-size:11px;color:#475569;" id="annualYearStatus">Pilih tahun untuk melihat status finalisasi.</div>
-            </div>
-            <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-top:12px;margin-bottom:12px;">
-                <div class="kpi-card"><div class="kpi-title">Total JO</div><div class="kpi-value" id="annualKpiJo">—</div></div>
-                <div class="kpi-card success"><div class="kpi-title">JO Closed</div><div class="kpi-value" id="annualKpiClosed">—</div></div>
-                <div class="kpi-card warning"><div class="kpi-title">JO Open</div><div class="kpi-value" id="annualKpiOpen">—</div></div>
-                <div class="kpi-card info"><div class="kpi-title">Total Hasil</div><div class="kpi-value" id="annualKpiHasil">—</div></div>
-            </div>
-            <div class="cloud-group" style="margin-bottom:8px;">
-                <button type="button" class="btn-backup" id="btnAnnualExport" onclick="downloadAnnualBackup()">Download Backup JSON Tahunan</button>
-                <button type="button" class="btn-restore" id="btnAnnualChooseFile" onclick="document.getElementById('annualBackupFile').click()">Pilih File Backup untuk Verifikasi</button>
-                <input type="file" id="annualBackupFile" accept=".json,application/json" style="display:none;" onchange="pilihFileBackupTahunan(event)">
-                <button type="button" class="btn-archive" id="btnAnnualVerify" onclick="verifikasiBackupTahunan()">Verifikasi Backup</button>
-                <button type="button" class="btn-clear" id="btnAnnualPurge" onclick="hapusCloudTahunan()" disabled>Hapus Data Cloud Tahun Ini</button>
-            </div>
-            <div id="annualBackupFileName" style="font-size:10px;color:#64748b;">Belum ada file backup yang dipilih untuk diverifikasi.</div>
-            <div id="annualArchiveMessage" role="status" style="font-size:11px;color:#64748b;margin-top:7px;">Backup dan penghapusan cloud adalah dua tindakan terpisah. Penghapusan hanya terbuka setelah file backup berhasil diverifikasi.</div>
-        </div>
-
         <!-- TABEL RINGKASAN 7 PENGIRIMAN TERDEKAT / BELUM CLOSED -->
         <div class="summary-box">
             <div class="section-title" style="color: var(--primary); margin-bottom: 8px;">
@@ -633,6 +644,51 @@
                     <div id="archiveCountText" style="font-size:11px;color:#718093;margin-top:4px;">0 baris diarsipkan</div>
                 </div>
                 <button class="btn-cancel-modal" onclick="tutupArsipJO()" style="flex:none;padding:7px 12px;">Tutup</button>
+            </div>
+            <div class="summary-box annual-archive-panel" id="annualArchivePanel">
+                <div class="annual-year-header">
+                    <div>
+                        <div class="section-title" style="margin-bottom:3px;">REKAP TAHUNAN & FINALISASI ARSIP</div>
+                        <div class="annual-year-subtitle">Pengelompokan mengikuti tanggal pengiriman, bukan awalan Job Order.</div>
+                    </div>
+                    <button type="button" class="btn-archive-view annual-refresh-btn" id="btnAnnualRefresh" onclick="loadAnnualArchiveSummary()">Muat Ulang Rekap</button>
+                </div>
+                <div class="annual-year-table-wrap">
+                    <table class="desktop-table annual-year-desktop">
+                        <colgroup><col style="width:10%"><col style="width:14%"><col style="width:13%"><col style="width:12%"><col style="width:16%"><col style="width:35%"></colgroup>
+                        <thead><tr>
+                            <th>Tahun</th><th>Total JO</th><th>Closed</th><th>Open</th><th>Total Hasil</th><th>Status Tahunan</th>
+                        </tr></thead>
+                        <tbody id="annualYearTableBody">
+                            <tr><td colspan="6" style="text-align:center;color:#718093;">Memuat rekap tahunan...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="annualYearCards" class="annual-year-cards" aria-live="polite">
+                    <div class="annual-year-empty">Memuat rekap tahunan...</div>
+                </div>
+                <div class="annual-year-select-row">
+                    <div class="annual-year-select-field">
+                        <label for="annualYearSelect">Pilih Tahun untuk Backup / Finalisasi</label>
+                        <select id="annualYearSelect" class="search-box" onchange="pilihTahunAnnual()"></select>
+                    </div>
+                    <div class="annual-year-status" id="annualYearStatus">Pilih tahun untuk melihat status finalisasi.</div>
+                </div>
+                <div class="kpi-grid annual-selected-kpis">
+                    <div class="kpi-card"><div class="kpi-title">Total JO</div><div class="kpi-value" id="annualKpiJo">—</div></div>
+                    <div class="kpi-card success"><div class="kpi-title">JO Closed</div><div class="kpi-value" id="annualKpiClosed">—</div></div>
+                    <div class="kpi-card warning"><div class="kpi-title">JO Open</div><div class="kpi-value" id="annualKpiOpen">—</div></div>
+                    <div class="kpi-card info"><div class="kpi-title">Total Hasil</div><div class="kpi-value" id="annualKpiHasil">—</div></div>
+                </div>
+                <div class="annual-action-grid">
+                    <button type="button" class="btn-backup" id="btnAnnualExport" onclick="downloadAnnualBackup()">Download Backup JSON Tahunan</button>
+                    <button type="button" class="btn-restore" id="btnAnnualChooseFile" onclick="document.getElementById('annualBackupFile').click()">Pilih File Backup untuk Verifikasi</button>
+                    <input type="file" id="annualBackupFile" accept=".json,application/json" style="display:none;" onchange="pilihFileBackupTahunan(event)">
+                    <button type="button" class="btn-archive" id="btnAnnualVerify" onclick="verifikasiBackupTahunan()">Verifikasi Backup</button>
+                    <button type="button" class="btn-clear" id="btnAnnualPurge" onclick="hapusCloudTahunan()" disabled>Hapus Data Cloud Tahun Ini</button>
+                </div>
+                <div id="annualBackupFileName" class="annual-file-name">Belum ada file backup yang dipilih untuk diverifikasi.</div>
+                <div id="annualArchiveMessage" role="status" class="annual-archive-message">Backup dan penghapusan cloud adalah dua tindakan terpisah. Penghapusan hanya terbuka setelah file backup berhasil diverifikasi.</div>
             </div>
             <div class="archive-toolbar archive-export-toolbar">
                 <input type="text" id="searchArsipJO" class="search-box" placeholder="Cari nama produk, nomor JO, PO#, atau kode item..." oninput="renderArsipJO()">
@@ -818,7 +874,6 @@
                     "<strong>" + currentUser.replace(/[&<>"']/g, "") + "</strong>";
                 catatLogAktivitas("Sistem diakses.");
                 await loadArchivesFromSupabase();
-                await loadAnnualArchiveSummary();
             } catch (error) {
                 errBox.textContent = error.message || "Login gagal. Periksa koneksi dan akun.";
                 errBox.style.display = 'block';
@@ -2134,7 +2189,7 @@
             if (toDate) toDate.value = "";
             const modal = document.getElementById("arsipJOModal");
             if (modal) modal.style.display = "flex";
-            await loadArchivesFromSupabase();
+            await Promise.all([loadArchivesFromSupabase(), loadAnnualArchiveSummary()]);
             renderArsipJO();
         };
 
@@ -2509,25 +2564,63 @@
         }
         function renderAnnualYearTable() {
             const body = document.getElementById("annualYearTableBody");
-            if (!body) return;
-            body.innerHTML = "";
+            const cards = document.getElementById("annualYearCards");
+            if (body) body.innerHTML = "";
+            if (cards) cards.innerHTML = "";
             if (!annualYearSummaries.length) {
-                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718093;">Belum ada data pengiriman bertanggal.</td></tr>';
+                if (body) body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718093;">Belum ada data pengiriman bertanggal.</td></tr>';
+                if (cards) {
+                    const empty = document.createElement("div");
+                    empty.className = "annual-year-empty";
+                    empty.textContent = "Belum ada data pengiriman bertanggal.";
+                    cards.appendChild(empty);
+                }
                 renderSelectedAnnualYear();
                 return;
             }
             annualYearSummaries.forEach(item => {
-                const tr = document.createElement("tr");
                 const values = [
                     item.year, formatAnnualNumber(item.totalJO), formatAnnualNumber(item.closedJO),
                     formatAnnualNumber(item.openJO), formatAnnualNumber(item.totalHasil), annualStatusLabel(item.status)
                 ];
-                values.forEach(value => {
-                    const td = document.createElement("td");
-                    td.textContent = String(value);
-                    tr.appendChild(td);
-                });
-                body.appendChild(tr);
+                if (body) {
+                    const tr = document.createElement("tr");
+                    values.forEach(value => {
+                        const td = document.createElement("td");
+                        td.textContent = String(value);
+                        tr.appendChild(td);
+                    });
+                    body.appendChild(tr);
+                }
+                if (cards) {
+                    const card = document.createElement("article");
+                    card.className = "annual-year-card " +
+                        (item.status === "FINAL" || item.status === "BACKED_UP" ? "is-final" :
+                         item.status === "WAITING_FINALIZATION" ? "is-waiting" : "");
+                    const head = document.createElement("div");
+                    head.className = "annual-year-card-head";
+                    const year = document.createElement("strong");
+                    year.textContent = String(item.year);
+                    const status = document.createElement("span");
+                    status.className = "annual-year-card-status";
+                    status.textContent = annualStatusLabel(item.status);
+                    head.append(year, status);
+                    const grid = document.createElement("div");
+                    grid.className = "annual-year-card-grid";
+                    [["Total JO", item.totalJO], ["JO Closed", item.closedJO], ["JO Open", item.openJO], ["Total Hasil", item.totalHasil]]
+                        .forEach(([label, value]) => {
+                            const metric = document.createElement("div");
+                            metric.className = "annual-year-metric";
+                            const caption = document.createElement("span");
+                            caption.textContent = label;
+                            const number = document.createElement("strong");
+                            number.textContent = formatAnnualNumber(value);
+                            metric.append(caption, number);
+                            grid.appendChild(metric);
+                        });
+                    card.append(head, grid);
+                    cards.appendChild(card);
+                }
             });
             renderSelectedAnnualYear();
         }
