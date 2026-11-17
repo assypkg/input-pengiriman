@@ -2235,11 +2235,14 @@
                     <th>Nama Produk</th><th>Order</th><th>Hasil</th><th>Sisa</th><th>Tanggal Arsip (WIB)</th>
                 </tr></thead><tbody>${tableRows}</tbody></table>
                 <div class="footer"><span>Dicetak dari Aplikasi Input Pengiriman</span><span>Waktu cetak: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB</span></div>
-                <script>window.onload = function(){ window.focus(); window.print(); };</script>
                 </body></html>`;
             printWindow.document.open();
             printWindow.document.write(reportHtml);
             printWindow.document.close();
+            setTimeout(() => {
+                try { printWindow.focus(); printWindow.print(); }
+                catch (error) { console.error("Gagal membuka dialog cetak PDF:", error); }
+            }, 500);
         };
 
         window.cetakPDF = function() { window.print(); };
