@@ -297,6 +297,13 @@
         .archive-table th, .archive-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
         .archive-table th { position: sticky; top: 0; background: var(--primary); color: white; z-index: 2; }
         .btn-restore-archive { background: #0f766e; padding: 5px 9px; font-size: 10px; }
+        .archive-tabs { display:grid; grid-template-columns:1fr 1fr; gap:7px; padding:4px; margin:0 0 12px; border:1px solid #dbe3ee; border-radius:10px; background:#f1f5f9; }
+        .archive-tab-button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-width:0; padding:10px 8px; border:1px solid transparent; border-radius:8px; background:transparent; color:#475569; cursor:pointer; }
+        .archive-tab-button span { font-size:13px; font-weight:800; }
+        .archive-tab-button small { font-size:10px; font-weight:500; color:inherit; opacity:.8; text-align:center; }
+        .archive-tab-button.is-active { background:#203764; color:#fff; box-shadow:0 2px 5px rgba(15,23,42,.14); }
+        .archive-tab-pane { min-width:0; }
+        .archive-tab-pane[hidden] { display:none !important; }
         .annual-archive-panel { margin: 0 0 14px; padding: 14px; }
         .annual-year-header { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
         .annual-year-subtitle { color:#64748b; font-size:11px; line-height:1.4; }
@@ -645,6 +652,7 @@
                 </div>
                 <button class="btn-cancel-modal" onclick="tutupArsipJO()" style="flex:none;padding:7px 12px;">Tutup</button>
             </div>
+            <section id="annualArchiveTabPane" class="archive-tab-pane" style="display:none;">
             <div class="summary-box annual-archive-panel" id="annualArchivePanel">
                 <div class="annual-year-header">
                     <div>
@@ -690,6 +698,12 @@
                 <div id="annualBackupFileName" class="annual-file-name">Belum ada file backup yang dipilih untuk diverifikasi.</div>
                 <div id="annualArchiveMessage" role="status" class="annual-archive-message">Backup dan penghapusan cloud adalah dua tindakan terpisah. Penghapusan hanya terbuka setelah file backup berhasil diverifikasi.</div>
             </div>
+            </section>
+            <nav class="archive-tabs" role="tablist" aria-label="Menu Arsip Closed">
+                <button type="button" id="archiveDataTabBtn" class="archive-tab-button is-active" role="tab" aria-selected="true" onclick="pilihTabArsipJO('data')"><span>Data Arsip</span><small>Daftar JO Closed</small></button>
+                <button type="button" id="archiveAnnualTabBtn" class="archive-tab-button" role="tab" aria-selected="false" onclick="pilihTabArsipJO('annual')"><span>Rekap Tahunan</span><small>KPI, backup & finalisasi</small></button>
+            </nav>
+            <section id="archiveDataTabPane" class="archive-tab-pane">
             <div class="archive-toolbar archive-export-toolbar">
                 <input type="text" id="searchArsipJO" class="search-box" placeholder="Cari nama produk, nomor JO, PO#, atau kode item..." oninput="renderArsipJO()">
                 <div class="archive-date-filter">
@@ -718,6 +732,7 @@
                 </table>
             </div>
             <div style="font-size:10px;color:#718093;margin-top:8px;">Arsip menyimpan baris pengiriman CLOSED. Data asli dan ID dokumen Firestore tetap dipertahankan.</div>
+            </section>
         </div>
     </div>
 
@@ -2180,6 +2195,25 @@
             }
         };
 
+        window.pilihTabArsipJO = function(tab) {
+            const isAnnual = tab === "annual";
+            const dataPane = document.getElementById("archiveDataTabPane");
+            const annualPane = document.getElementById("annualArchiveTabPane");
+            const dataButton = document.getElementById("archiveDataTabBtn");
+            const annualButton = document.getElementById("archiveAnnualTabBtn");
+            if (dataPane) dataPane.style.display = isAnnual ? "none" : "block";
+            if (annualPane) annualPane.style.display = isAnnual ? "block" : "none";
+            if (dataButton) {
+                dataButton.classList.toggle("is-active", !isAnnual);
+                dataButton.setAttribute("aria-selected", String(!isAnnual));
+            }
+            if (annualButton) {
+                annualButton.classList.toggle("is-active", isAnnual);
+                annualButton.setAttribute("aria-selected", String(isAnnual));
+            }
+            if (isAnnual) loadAnnualArchiveSummary();
+        };
+
         window.bukaArsipJO = async function() {
             const search = document.getElementById("searchArsipJO");
             const fromDate = document.getElementById("archiveFromDate");
@@ -2189,7 +2223,8 @@
             if (toDate) toDate.value = "";
             const modal = document.getElementById("arsipJOModal");
             if (modal) modal.style.display = "flex";
-            await Promise.all([loadArchivesFromSupabase(), loadAnnualArchiveSummary()]);
+            window.pilihTabArsipJO("data");
+            await loadArchivesFromSupabase();
             renderArsipJO();
         };
 
