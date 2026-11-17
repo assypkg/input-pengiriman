@@ -1923,7 +1923,8 @@
                     }
 
                     itemsForDate.forEach(item => {
-                        let isClosed = nilaiSisaPengirimanAktif(item) <= 0;
+                        const remainingQty = nilaiSisaPengirimanAktif(item);
+                        let isClosed = remainingQty <= 0;
                         let statusInfo = isClosed 
                             ? '<span class="status-close">✓ CLOSED</span>' 
                             : '<span class="status-open">⚠️ OPEN</span>';
@@ -1989,7 +1990,7 @@
                             [
                                 ['ORDER', item.order, ''],
                                 ['HASIL', item.hasil, 'result'],
-                                ['SISA', item.sisa, 'remaining']
+                                ['SISA', remainingQty, 'remaining']
                             ].forEach(([label, value, kind]) => {
                                 const metric = document.createElement('div');
                                 metric.className = 'active-record-qty ' + kind;
