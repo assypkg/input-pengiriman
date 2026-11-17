@@ -575,6 +575,41 @@
             .archive-mobile-meta-item, .archive-mobile-meta-item b, .archive-mobile-note { font-size:8.5px; }
         }
 
+            @media screen and (max-width:850px) {
+            .mobile-card-container { gap:8px; }
+            .mobile-card-container .active-date-header { min-height:34px; box-sizing:border-box; padding:7px 10px !important; margin-top:8px !important; margin-bottom:3px !important; border-radius:7px; }
+            .mobile-card-container .active-date-header > span:first-child { font-size:12px !important; font-weight:800; }
+            .mobile-card-container .active-date-header > span:last-child { font-size:10px !important; padding:3px 7px !important; }
+            .record-card.active-record-card { padding:9px 10px; gap:5px; border-radius:8px; border-left-width:4px; box-shadow:0 1px 4px rgba(15,23,42,.05); }
+            .active-record-header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-bottom:5px; border-bottom:1px solid #e8edf4; }
+            .active-record-identity { display:flex; align-items:baseline; flex-wrap:wrap; gap:5px; min-width:0; }
+            .active-record-label { color:#748197; font-size:10px; font-weight:800; }
+            .active-record-jo { color:var(--primary); font-size:14px; font-weight:850; line-height:1.2; }
+            .active-record-fg { padding-left:6px; border-left:1px solid #cbd5e1; color:#52647c; font-size:11px; font-weight:750; overflow-wrap:anywhere; }
+            .active-record-status { flex:0 0 auto; padding:3px 7px; border-radius:20px; font-size:9px; font-weight:850; }
+            .active-record-status.closed { color:#16834b; background:#e9f8ef; }
+            .active-record-status.open { color:#c0392b; background:#fff0ef; }
+            .active-record-product { color:var(--text-main); font-size:12px; line-height:1.25; font-weight:750; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+            .active-record-qty-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; }
+            .active-record-qty { min-width:0; padding:5px 6px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+            .active-record-qty span { display:block; color:#64748b; font-size:9px; font-weight:800; letter-spacing:.2px; }
+            .active-record-qty strong { display:block; margin-top:2px; color:var(--primary); font-size:12px; line-height:1.15; font-weight:850; overflow-wrap:anywhere; }
+            .active-record-qty.result strong { color:var(--success); }
+            .active-record-qty.remaining strong { color:var(--danger); }
+            .active-record-details { display:grid; grid-template-columns:minmax(0,1fr); gap:3px; padding-top:4px; border-top:1px dashed #dce4ee; }
+            .active-record-detail, .active-record-note { display:flex; align-items:baseline; flex-wrap:wrap; gap:5px; min-width:0; }
+            .active-record-detail span, .active-record-note span { color:#7b8798; font-size:9px; font-weight:850; }
+            .active-record-detail strong, .active-record-note strong { color:#334155; font-size:10.5px; line-height:1.3; font-weight:650; overflow-wrap:anywhere; }
+            .record-card.active-record-card .card-footer-actions { gap:6px; margin-top:1px; }
+            .record-card.active-record-card .card-footer-actions button { min-height:30px; padding:5px 7px; font-size:10px; }
+        }
+        @media screen and (max-width:380px) {
+            .active-record-jo { font-size:13px; }
+            .active-record-fg { font-size:10px; }
+            .active-record-product { font-size:11px; }
+            .active-record-qty strong { font-size:11px; }
+        }
+
     </style>
 </head>
 <body>
@@ -1825,6 +1860,7 @@
 
                     if (mobileContainer) {
                         let mobileHeader = document.createElement('div');
+                        mobileHeader.className = "active-date-header";
                         mobileHeader.style.backgroundColor = "#eef2f7";
                         mobileHeader.style.padding = "10px 15px";
                         mobileHeader.style.borderRadius = "8px";
@@ -1886,27 +1922,75 @@
                         `;
 
                         if (mobileContainer) {
-                            let cardDiv = document.createElement('div');
-                            cardDiv.className = `record-card ${isClosed ? 'closed' : 'open'}`;
-                            cardDiv.innerHTML = `
-                                <div class="card-header">
-                                    <span class="card-title">JO: <strong>${item.jobOrder || '-'}</strong></span>
-                                    <span>${statusInfo}</span>
-                                </div>
-                                <div style="font-size: 13px; font-weight: bold; color: var(--text-main);">
-                                    ${item.produk || '-'} <span style="font-size: 11px; color:#666; font-weight:normal;">(${item.kodeItem || '-'})</span>
-                                </div>
-                                <div style="font-size: 11px; color: #555;">PO#: <strong>${displayPo}</strong></div>
-                                <div class="card-body-grid">
-                                    <div>Order: <strong>${Number(item.order || 0).toLocaleString('en-US')}</strong></div>
-                                    <div>Hasil: <strong style="color:var(--success);">${Number(item.hasil || 0).toLocaleString('en-US')}</strong></div>
-                                    <div>Sisa: <strong class="${sisaClass}">${Number(item.sisa || 0).toLocaleString('en-US')}</strong></div>
-                                    <div>Ket: ${item.ket || '-'}</div>
-                                </div>
-                                <div class="card-footer-actions">
-                                    ${actionBtn}
-                                </div>
-                            `;
+                            const cardDiv = document.createElement('article');
+                            cardDiv.className = `record-card active-record-card ${isClosed ? 'closed' : 'open'}`;
+
+                            const cardHeader = document.createElement('div');
+                            cardHeader.className = 'active-record-header';
+                            const identity = document.createElement('div');
+                            identity.className = 'active-record-identity';
+
+                            const joLabel = document.createElement('span');
+                            joLabel.className = 'active-record-label';
+                            joLabel.textContent = 'JO';
+                            const joNumber = document.createElement('strong');
+                            joNumber.className = 'active-record-jo';
+                            joNumber.textContent = item.jobOrder || '-';
+                            const fgCode = document.createElement('span');
+                            fgCode.className = 'active-record-fg';
+                            fgCode.textContent = item.kodeItem || '-';
+                            identity.append(joLabel, joNumber, fgCode);
+
+                            const statusBadge = document.createElement('span');
+                            statusBadge.className = `active-record-status ${isClosed ? 'closed' : 'open'}`;
+                            statusBadge.textContent = isClosed ? 'CLOSED' : 'OPEN';
+                            cardHeader.append(identity, statusBadge);
+
+                            const product = document.createElement('div');
+                            product.className = 'active-record-product';
+                            product.textContent = item.produk || '-';
+
+                            const quantityGrid = document.createElement('div');
+                            quantityGrid.className = 'active-record-qty-grid';
+                            [
+                                ['ORDER', item.order, ''],
+                                ['HASIL', item.hasil, 'result'],
+                                ['SISA', item.sisa, 'remaining']
+                            ].forEach(([label, value, kind]) => {
+                                const metric = document.createElement('div');
+                                metric.className = 'active-record-qty ' + kind;
+                                const caption = document.createElement('span');
+                                caption.textContent = label;
+                                const number = document.createElement('strong');
+                                number.textContent = Number(value || 0).toLocaleString('id-ID');
+                                metric.append(caption, number);
+                                quantityGrid.appendChild(metric);
+                            });
+
+                            const details = document.createElement('div');
+                            details.className = 'active-record-details';
+                            const po = document.createElement('div');
+                            po.className = 'active-record-detail';
+                            const poLabel = document.createElement('span');
+                            poLabel.textContent = 'PO';
+                            const poValue = document.createElement('strong');
+                            poValue.textContent = displayPo;
+                            po.append(poLabel, poValue);
+
+                            const note = document.createElement('div');
+                            note.className = 'active-record-note';
+                            const noteLabel = document.createElement('span');
+                            noteLabel.textContent = 'KETERANGAN';
+                            const noteValue = document.createElement('strong');
+                            noteValue.textContent = item.ket || '-';
+                            note.append(noteLabel, noteValue);
+                            details.append(po, note);
+
+                            const actions = document.createElement('div');
+                            actions.className = 'card-footer-actions';
+                            actions.innerHTML = actionBtn;
+
+                            cardDiv.append(cardHeader, product, quantityGrid, details, actions);
                             mobileContainer.appendChild(cardDiv);
                         }
 
