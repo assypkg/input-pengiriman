@@ -32,12 +32,9 @@ function validYear(value: unknown): string {
 function addDays(dateString: string, days: number): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return "";
   const [year, month, day] = dateString.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day + days));
-  if (date.getUTCFullYear() < 2000 || date.getUTCMonth() !== ((month - 1 + Math.floor((day + days - 1) / 28)) % 12 + 12) % 12) {
-    // Date validity is checked below by formatting the original input separately.
-  }
   const original = new Date(Date.UTC(year, month - 1, day));
   if (original.getUTCFullYear() !== year || original.getUTCMonth() !== month - 1 || original.getUTCDate() !== day) return "";
+  const date = new Date(Date.UTC(year, month - 1, day + days));
   return date.getUTCFullYear() + "-" + String(date.getUTCMonth() + 1).padStart(2, "0") + "-" +
     String(date.getUTCDate()).padStart(2, "0");
 }
@@ -396,6 +393,26 @@ Deno.serve(async (req: Request) => {
         .map(([year, yearRows]) => summarizeYear(yearRows, year))
         .sort((a, b) => b.year.localeCompare(a.year));
       return json({ success: true, years: summaries, grouping: "delivery_date_year" });
+    }
+
+    if (action === "admin-summary") {
+      const authorizedSummary = await authorizeAdmin(req);
+      if (authorizedSummary instanceof Response) return authorizedSummary;
+      const firebase = await getFirebaseAccessToken();
+      const rows = await listFirestoreRows(firebase);
+      const byYear = new Map<string, Array<{ id: string; record: Record<string, any> }>>();
+      for (const row of rows) {
+        const rowYear = String(row.record.tanggal || "").slice(0, 4);
+        if (!/^\\d{4}$/.test(rowYear)) continue;
+        if (!byYear.has(rowYear)) byYear.set(rowYear, []);
+        byYear.get(rowYear)!.push(row);
+      }
+      const currentYear = jakartaToday().slice(0, 4);
+      if (!byYear.has(currentYear)) byYear.set(currentYear, []);
+      const years = Array.from(byYear.entries())
+        .map(([rowYear, yearRows]) => summarizeYear(yearRows, rowYear))
+        .sort((a, b) => b.year.localeCompare(a.year));
+      return json({ success: true, years, grouping: "delivery_date_year" });
     }
 
     const authorized = await authorizeAdmin(req);
