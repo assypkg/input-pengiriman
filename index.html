@@ -509,6 +509,35 @@
             
             h2 { display: none; }
         }
+            @media (max-width:850px) {
+            #archiveMobileCards .archive-mobile-card { padding:6px 8px; border-radius:7px; border-left-width:3px; gap:0; }
+            #archiveMobileCards .archive-mobile-card-head { display:flex; align-items:center; justify-content:flex-start; gap:6px; padding:0 0 3px; border-bottom:1px solid #edf1f6; }
+            #archiveMobileCards .archive-mobile-jo-block { min-width:0; flex:1; }
+            #archiveMobileCards .archive-mobile-jo { display:block; margin:0; font-size:10px; line-height:1.1; }
+            #archiveMobileCards .archive-mobile-status { padding:2px 5px; font-size:7px; }
+            #archiveMobileCards .archive-mobile-restore { width:auto; min-height:23px; margin:0; padding:3px 6px; border-radius:5px; font-size:8px; }
+            #archiveMobileCards .archive-mobile-product { margin:3px 0; font-size:9px; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            #archiveMobileCards .archive-mobile-qty-grid { gap:4px; margin:0 0 3px; }
+            #archiveMobileCards .archive-mobile-qty { padding:3px 5px; border-radius:4px; }
+            #archiveMobileCards .archive-mobile-qty span { display:inline; font-size:7px; margin-right:3px; }
+            #archiveMobileCards .archive-mobile-qty strong { display:inline; margin:0; font-size:9px; line-height:1; }
+            #archiveMobileCards .archive-mobile-meta { display:flex; flex-wrap:nowrap; align-items:center; gap:2px 9px; overflow:hidden; padding-top:3px; border-top:1px dashed #e5eaf1; }
+            #archiveMobileCards .archive-mobile-meta-item { display:inline-flex; gap:3px; min-width:0; color:#475569; font-size:7px; white-space:nowrap; }
+            #archiveMobileCards .archive-mobile-meta-item b { color:#8490a0; font-size:7px; }
+            #archiveMobileCards .archive-mobile-meta-item span { overflow:hidden; text-overflow:ellipsis; }
+            #archiveMobileCards .archive-mobile-note { display:flex; gap:4px; margin-top:2px; color:#64748b; font-size:7px; line-height:1.15; white-space:nowrap; overflow:hidden; }
+            #archiveMobileCards .archive-mobile-note b { flex:0 0 auto; }
+            #archiveMobileCards .archive-mobile-note span { overflow:hidden; text-overflow:ellipsis; }
+        }
+        @media (max-width:380px) {
+            #archiveMobileCards .archive-mobile-card { padding:5px 6px; }
+            #archiveMobileCards .archive-mobile-meta { gap:2px 6px; }
+            #archiveMobileCards .archive-mobile-meta-item,
+            #archiveMobileCards .archive-mobile-meta-item b,
+            #archiveMobileCards .archive-mobile-note { font-size:6px; }
+            #archiveMobileCards .archive-mobile-qty strong { font-size:8px; }
+        }
+
     </style>
 </head>
 <body>
@@ -2480,79 +2509,30 @@
                 tr.appendChild(td);
                 body.appendChild(tr);
                 if (cards) {
-                    const empty = document.createElement("div");
-                    empty.className = "archive-mobile-card";
-                    empty.style.cssText = "text-align:center;color:#718093;padding:22px 14px;border-left:1px solid #dbe3ee;";
-                    empty.textContent = message;
-                    cards.appendChild(empty);
-                }
-            };
-
-            if (fromDate && toDate && fromDate > toDate) {
-                showEmpty("Tanggal awal tidak boleh melewati tanggal akhir.");
-                return;
-            }
-            if (!rows.length) {
-                const hasFilter = String(document.getElementById("searchArsipJO")?.value || "").trim() || fromDate || toDate;
-                showEmpty(archivesLoaded
-                    ? (hasFilter ? "Arsip tidak ditemukan sesuai filter." : "Belum ada JO CLOSED di Supabase Storage.")
-                    : "Belum berhasil memuat arsip Supabase.");
-                return;
-            }
-
-            rows.forEach(item => {
-                const order = Number(item.order || 0);
-                const hasil = Number(item.hasil || 0);
-                const sisa = Number(nilaiSisaArsip(item) || 0);
-                const archivedAt = item.archivedAt
-                    ? new Date(item.archivedAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })
-                    : "-";
-
-                const tr = document.createElement("tr");
-                [
-                    formatTanggalID(item.tanggal), item.jobOrder || "-", item.poNum || "-",
-                    item.kodeItem || "-", item.produk || "-",
-                    order.toLocaleString("id-ID"), hasil.toLocaleString("id-ID"),
-                    sisa.toLocaleString("id-ID"), item.ket || "-", archivedAt
-                ].forEach(value => {
-                    const td = document.createElement("td");
-                    td.textContent = String(value);
-                    tr.appendChild(td);
-                });
-                const action = document.createElement("td");
-                const restore = document.createElement("button");
-                restore.className = "btn-restore-archive";
-                restore.textContent = "Pulihkan";
-                restore.addEventListener("click", () => pulihkanJO(item.sourceDocId));
-                action.appendChild(restore);
-                tr.appendChild(action);
-                body.appendChild(tr);
-
-                if (cards) {
                     const card = document.createElement("article");
                     card.className = "archive-mobile-card";
 
                     const head = document.createElement("div");
                     head.className = "archive-mobile-card-head";
                     const joBlock = document.createElement("div");
-                    const joLabel = document.createElement("span");
-                    joLabel.className = "archive-mobile-jo-label";
-                    joLabel.textContent = "Job Order";
+                    joBlock.className = "archive-mobile-jo-block";
                     const joNumber = document.createElement("strong");
                     joNumber.className = "archive-mobile-jo";
                     joNumber.textContent = item.jobOrder || "-";
-                    joBlock.append(joLabel, joNumber);
+                    joBlock.appendChild(joNumber);
                     const status = document.createElement("span");
                     status.className = "archive-mobile-status";
                     status.textContent = "CLOSED";
-                    head.append(joBlock, status);
+                    const restore = document.createElement("button");
+                    restore.type = "button";
+                    restore.className = "btn-restore-archive archive-mobile-restore";
+                    restore.textContent = "Pulihkan";
+                    restore.addEventListener("click", () => pulihkanJO(item.sourceDocId));
+                    head.append(joBlock, status, restore);
 
                     const product = document.createElement("div");
                     product.className = "archive-mobile-product";
-                    product.textContent = item.produk || "-";
-                    const code = document.createElement("div");
-                    code.className = "archive-mobile-code";
-                    code.textContent = "Kode Item: " + (item.kodeItem || "-");
+                    product.textContent = (item.produk || "-") + " • " + (item.kodeItem || "-");
 
                     const qtyGrid = document.createElement("div");
                     qtyGrid.className = "archive-mobile-qty-grid";
@@ -2568,31 +2548,32 @@
                             qtyGrid.appendChild(metric);
                         });
 
-                    const details = document.createElement("div");
-                    details.className = "archive-mobile-details";
-                    const addDetail = (label, value, wide = false, note = false) => {
-                        const cell = document.createElement("div");
-                        cell.className = "archive-mobile-detail" +
-                            (wide ? " is-wide" : "") + (note ? " is-note" : "");
-                        const caption = document.createElement("span");
-                        caption.textContent = label;
-                        const content = document.createElement("strong");
-                        content.textContent = String(value || "-");
-                        cell.append(caption, content);
-                        details.appendChild(cell);
-                    };
-                    addDetail("PO Number", item.poNum || "-");
-                    addDetail("Tanggal Kirim", formatTanggalID(item.tanggal));
-                    addDetail("Keterangan", item.ket || "-", true, true);
-                    addDetail("Tanggal Arsip", archivedAt, true);
+                    const meta = document.createElement("div");
+                    meta.className = "archive-mobile-meta";
+                    [
+                        ["PO", item.poNum || "-"],
+                        ["Kirim", formatTanggalID(item.tanggal)],
+                        ["Arsip", archivedAt]
+                    ].forEach(([label, value]) => {
+                        const pair = document.createElement("span");
+                        pair.className = "archive-mobile-meta-item";
+                        const key = document.createElement("b");
+                        key.textContent = label + ":";
+                        const val = document.createElement("span");
+                        val.textContent = String(value || "-");
+                        pair.append(key, val);
+                        meta.appendChild(pair);
+                    });
 
-                    const restoreCard = document.createElement("button");
-                    restoreCard.type = "button";
-                    restoreCard.className = "btn-restore-archive archive-mobile-restore";
-                    restoreCard.textContent = "Pulihkan Job Order";
-                    restoreCard.addEventListener("click", () => pulihkanJO(item.sourceDocId));
+                    const note = document.createElement("div");
+                    note.className = "archive-mobile-note";
+                    const noteLabel = document.createElement("b");
+                    noteLabel.textContent = "Ket:";
+                    const noteValue = document.createElement("span");
+                    noteValue.textContent = item.ket || "-";
+                    note.append(noteLabel, noteValue);
 
-                    card.append(head, product, code, qtyGrid, details, restoreCard);
+                    card.append(head, product, qtyGrid, meta, note);
                     cards.appendChild(card);
                 }
             });
