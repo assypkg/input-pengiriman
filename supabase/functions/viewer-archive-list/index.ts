@@ -110,9 +110,16 @@ async function getStoredRecord(context: StorageContext, path: string) {
   return await response.json();
 }
 
-function recordMatches(record: any, keyword: string, deliveryDate: string): boolean {
+function recordMatches(
+  record: any,
+  keyword: string,
+  deliveryDateFrom: string,
+  deliveryDateTo: string,
+): boolean {
   if (!record || typeof record !== "object") return false;
-  if (deliveryDate && String(record.tanggal || "") !== deliveryDate) return false;
+  const deliveryDate = String(record.tanggal || "");
+  if (deliveryDateFrom && deliveryDate < deliveryDateFrom) return false;
+  if (deliveryDateTo && deliveryDate > deliveryDateTo) return false;
   if (!keyword) return true;
   const searchable = [
     record.jobOrder,
@@ -120,8 +127,57 @@ function recordMatches(record: any, keyword: string, deliveryDate: string): bool
     record.kodeItem,
     record.produk,
     record.tanggal,
+    record.ket,
   ].map((value) => String(value || "").toLowerCase()).join(" ");
   return searchable.includes(keyword);
+}
+
+async function calculateArchiveSummary(
+  context: StorageContext,
+  keyword: string,
+  deliveryDateFrom: string,
+  deliveryDateTo: string,
+) {
+  const MAX_SUMMARY_SCAN = 5000;
+  let offset = 0;
+  let totalClosed = 0;
+  let totalHasil = 0;
+  let scanned = 0;
+
+  while (scanned < MAX_SUMMARY_SCAN) {
+    const requested = Math.min(LIST_BATCH, MAX_SUMMARY_SCAN - scanned);
+    const objects = await listStorageObjects(context, offset, requested);
+    if (!objects.length) break;
+
+    for (let start = 0; start < objects.length; start += 20) {
+      const group = objects.slice(start, start + 20);
+      const envelopes = await Promise.all(group.map(async (file: any) => {
+        const path = String(file.name).startsWith(PREFIX) ? String(file.name) : PREFIX + String(file.name);
+        return await getStoredRecord(context, path);
+      }));
+
+      for (const envelope of envelopes) {
+        scanned++;
+        if (!envelope || envelope.archiveState === "RESTORED" || !envelope.record) continue;
+        if (!recordMatches(envelope.record, keyword, deliveryDateFrom, deliveryDateTo)) continue;
+        totalClosed++;
+        const hasil = Number(envelope.record.hasil || 0);
+        if (Number.isFinite(hasil)) totalHasil += hasil;
+      }
+    }
+
+    offset += objects.length;
+    if (objects.length < requested) break;
+  }
+
+  if (scanned >= MAX_SUMMARY_SCAN) {
+    const nextObjects = await listStorageObjects(context, offset, 1);
+    if (nextObjects.length) {
+      throw new Error("Jumlah file arsip melebihi batas 5.000 untuk perhitungan KPI. Gunakan filter tanggal yang lebih spesifik.");
+    }
+  }
+
+  return { totalClosed, totalHasil, scanned };
 }
 
 Deno.serve(async (req: Request) => {
@@ -133,14 +189,22 @@ Deno.serve(async (req: Request) => {
     const token = typeof input?.token === "string" ? input.token.trim().toUpperCase() : "";
     const deviceId = typeof input?.deviceId === "string" ? input.deviceId : "";
     const keyword = typeof input?.search === "string" ? input.search.trim().toLowerCase() : "";
-    const deliveryDate = typeof input?.deliveryDate === "string" ? input.deliveryDate.trim() : "";
+    const legacyDeliveryDate = typeof input?.deliveryDate === "string" ? input.deliveryDate.trim() : "";
+    const deliveryDateFrom = typeof input?.deliveryDateFrom === "string"
+      ? input.deliveryDateFrom.trim() : legacyDeliveryDate;
+    const deliveryDateTo = typeof input?.deliveryDateTo === "string"
+      ? input.deliveryDateTo.trim() : legacyDeliveryDate;
+    const action = typeof input?.action === "string" ? input.action : "list";
     const cursorValue = input?.cursor === undefined || input?.cursor === null ? 0 : Number(input.cursor);
     const pageSizeValue = input?.limit === undefined ? DEFAULT_PAGE_SIZE : Number(input.limit);
 
     if (!token || token.length > 120 ||
         !/^[A-Za-z0-9_-]{3,80}$/.test(deviceId) ||
         keyword.length > 100 ||
-        (deliveryDate && !validIsoDate(deliveryDate)) ||
+        !["list", "summary"].includes(action) ||
+        (deliveryDateFrom && !validIsoDate(deliveryDateFrom)) ||
+        (deliveryDateTo && !validIsoDate(deliveryDateTo)) ||
+        (deliveryDateFrom && deliveryDateTo && deliveryDateFrom > deliveryDateTo) ||
         !Number.isSafeInteger(cursorValue) || cursorValue < 0 || cursorValue > 1000000 ||
         !Number.isInteger(pageSizeValue) || pageSizeValue < 1 || pageSizeValue > MAX_PAGE_SIZE) {
       return json({ success: false, error: "Parameter pencarian atau identitas Viewer tidak valid." }, 400);
@@ -156,6 +220,20 @@ Deno.serve(async (req: Request) => {
     if (denied) return denied;
 
     const context: StorageContext = { url, serviceKey };
+
+    if (action === "summary") {
+      const summary = await calculateArchiveSummary(
+        context, keyword, deliveryDateFrom, deliveryDateTo,
+      );
+      return json({
+        success: true,
+        bucket: BUCKET,
+        ...summary,
+        deliveryDateFrom: deliveryDateFrom || null,
+        deliveryDateTo: deliveryDateTo || null,
+      });
+    }
+
     let offset = cursorValue;
     let scanned = 0;
     let reachedEnd = false;
@@ -184,7 +262,7 @@ Deno.serve(async (req: Request) => {
           scanned++;
 
           if (envelope && envelope.archiveState !== "RESTORED" && envelope.record &&
-              recordMatches(envelope.record, keyword, deliveryDate)) {
+              recordMatches(envelope.record, keyword, deliveryDateFrom, deliveryDateTo)) {
             if (records.length >= pageSizeValue) {
               // Do not consume the first match for the next page.
               offset = currentOffset;
@@ -223,7 +301,7 @@ Deno.serve(async (req: Request) => {
       nextCursor: hasMore ? offset : null,
       hasMore,
       scanned,
-      filtered: Boolean(keyword || deliveryDate),
+      filtered: Boolean(keyword || deliveryDateFrom || deliveryDateTo),
     });
   } catch (error) {
     console.error("viewer-archive-list", error);
