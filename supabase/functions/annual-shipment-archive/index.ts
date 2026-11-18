@@ -328,7 +328,7 @@ async function getYearRows(year: string) {
 function parseJobOrderYear(value: unknown): string {
   const jobOrder = String(value || "").trim().toUpperCase();
   // Examples: JD26-0800, JE26-0655. Unknown formats are kept outside year totals.
-  const match = jobOrder.match(/^[A-Z]{2}(\\d{2})-/);
+  const match = jobOrder.match(/^[A-Z]{2}(\d{2})-/);
   return match ? "20" + match[1] : "";
 }
 
