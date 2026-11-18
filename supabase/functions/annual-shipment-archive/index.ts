@@ -440,7 +440,7 @@ Deno.serve(async (req: Request) => {
       const byYear = new Map<string, Array<{ id: string; record: Record<string, any> }>>();
       for (const row of rows) {
         const rowYear = String(row.record.tanggal || "").slice(0, 4);
-        if (!/^\\d{4}$/.test(rowYear)) continue;
+        if (!/^\d{4}$/.test(rowYear)) continue;
         if (!byYear.has(rowYear)) byYear.set(rowYear, []);
         byYear.get(rowYear)!.push(row);
       }
