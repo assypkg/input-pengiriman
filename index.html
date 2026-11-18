@@ -657,6 +657,11 @@
         .archive-mobile-qty.is-result strong { color:#27ae60 !important; }
         .archive-mobile-qty.is-shortage strong { color:#253858 !important; }
 
+            .annual-coverage-note { display:block; margin-top:4px; color:#8a5a12; font-size:10px; line-height:1.35; font-weight:650; overflow-wrap:anywhere; }
+        .annual-year-desktop td:first-child .annual-coverage-note { max-width:180px; }
+        .annual-year-card .annual-coverage-note { padding:5px 7px; border-radius:5px; background:#fff7e6; }
+        @media (max-width:850px) { .annual-coverage-note { font-size:10px; } }
+
     </style>
 </head>
 <body>
@@ -3067,20 +3072,70 @@
                 UPCOMING: "BELUM DIMULAI"
             })[status] || status || "Status tidak tersedia";
         }
+        async function refreshAnnualAdminSession() {
+            const refreshToken = sessionStorage.getItem("assembly_admin_refresh_token") || "";
+            if (!refreshToken) {
+                throw new Error("Sesi Admin telah berakhir. Silakan login kembali.");
+            }
+
+            let response;
+            try {
+                response = await fetch(SUPABASE_URL + "/auth/v1/token?grant_type=refresh_token", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "apikey": SUPABASE_PUBLISHABLE_KEY
+                    },
+                    body: JSON.stringify({ refresh_token: refreshToken })
+                });
+            } catch (_) {
+                throw new Error("Koneksi untuk memperbarui sesi Admin gagal. Periksa internet lalu tekan Muat Ulang Rekap.");
+            }
+
+            const session = await response.json().catch(() => ({}));
+            if (!response.ok || !session.access_token || !session.refresh_token) {
+                if ([400, 401, 403].includes(response.status)) {
+                    sessionStorage.removeItem("assembly_admin_access_token");
+                    sessionStorage.removeItem("assembly_admin_refresh_token");
+                }
+                throw new Error(session.msg || session.message ||
+                    "Sesi Admin tidak dapat diperpanjang. Silakan login kembali.");
+            }
+
+            // Supabase rotates refresh tokens; always store the newly issued pair together.
+            sessionStorage.setItem("assembly_admin_access_token", session.access_token);
+            sessionStorage.setItem("assembly_admin_refresh_token", session.refresh_token);
+            return session.access_token;
+        }
+
         async function annualArchiveApi(action, payload = {}) {
-            const token = sessionStorage.getItem("assembly_admin_access_token") || "";
-            if (!token) throw new Error("Sesi Admin berakhir. Silakan login kembali.");
-            const response = await fetch(SUPABASE_URL + "/functions/v1/annual-shipment-archive", {
+            let token = sessionStorage.getItem("assembly_admin_access_token") || "";
+            if (!token) token = await refreshAnnualAdminSession();
+
+            const sendRequest = accessToken => fetch(SUPABASE_URL + "/functions/v1/annual-shipment-archive", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     "apikey": SUPABASE_PUBLISHABLE_KEY,
-                    "Authorization": "Bearer " + token
+                    "Authorization": "Bearer " + accessToken
                 },
                 body: JSON.stringify({ action, ...payload })
             });
+
+            let response = await sendRequest(token);
+            if (response.status === 401) {
+                // Access token expired while the app was left open: refresh once and retry once.
+                token = await refreshAnnualAdminSession();
+                response = await sendRequest(token);
+            }
+
             const result = await response.json().catch(() => ({}));
             if (!response.ok || result.success !== true) {
+                if (response.status === 401) {
+                    sessionStorage.removeItem("assembly_admin_access_token");
+                    sessionStorage.removeItem("assembly_admin_refresh_token");
+                    throw new Error("Sesi Admin tidak dapat diverifikasi setelah diperbarui. Silakan login kembali.");
+                }
                 throw new Error(result.error || "Permintaan rekap tahunan gagal diproses.");
             }
             return result;
@@ -3146,9 +3201,18 @@
                 ];
                 if (body) {
                     const tr = document.createElement("tr");
-                    values.forEach(value => {
+                    values.forEach((value, index) => {
                         const td = document.createElement("td");
-                        td.textContent = String(value);
+                        if (index === 0 && String(item.year) === "2026") {
+                            const year = document.createElement("strong");
+                            year.textContent = "2026";
+                            const note = document.createElement("small");
+                            note.className = "annual-coverage-note";
+                            note.textContent = "Arsip JO CLOSED mulai 10 November 2026";
+                            td.append(year, note);
+                        } else {
+                            td.textContent = String(value);
+                        }
                         tr.appendChild(td);
                     });
                     body.appendChild(tr);
@@ -3179,7 +3243,14 @@
                             metric.append(caption, number);
                             grid.appendChild(metric);
                         });
-                    card.append(head, grid);
+                    if (String(item.year) === "2026") {
+                        const coverage = document.createElement("div");
+                        coverage.className = "annual-coverage-note";
+                        coverage.textContent = "Arsip JO CLOSED mulai 10 November 2026";
+                        card.append(head, coverage, grid);
+                    } else {
+                        card.append(head, grid);
+                    }
                     cards.appendChild(card);
                 }
             });
@@ -3206,7 +3277,8 @@
             }
             if (status) status.textContent = annualStatusLabel(item.status) +
                 " • Baris: " + formatAnnualNumber(item.totalRecords) +
-                " • Belum final: " + formatAnnualNumber(item.pendingArchiveRows);
+                " • Belum final: " + formatAnnualNumber(item.pendingArchiveRows) +
+                (String(item.year) === "2026" ? " • Arsip JO CLOSED mulai 10 November 2026" : "");
             if (jo) jo.textContent = formatAnnualNumber(item.totalJO);
             if (closed) closed.textContent = formatAnnualNumber(item.closedJO);
             if (open) open.textContent = formatAnnualNumber(item.openJO);
