@@ -662,6 +662,12 @@
         .annual-year-card .annual-coverage-note { padding:5px 7px; border-radius:5px; background:#fff7e6; }
         @media (max-width:850px) { .annual-coverage-note { font-size:10px; } }
 
+            .annual-year-mode { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin:12px 0 8px; padding:4px; border:1px solid #dbe3ee; border-radius:9px; background:#f1f5f9; }
+        .annual-year-mode-btn { min-height:39px; padding:8px 10px; border:1px solid transparent; border-radius:7px; background:transparent; color:#475569; font-size:12px; font-weight:750; cursor:pointer; }
+        .annual-year-mode-btn.is-active { background:#203764; color:#fff; }
+        .annual-grouping-info { margin:0 0 9px; padding:8px 10px; border-left:3px solid #2563eb; border-radius:5px; background:#eff6ff; color:#334155; font-size:11px; line-height:1.4; }
+        @media (max-width:600px) { .annual-year-mode { grid-template-columns:1fr; } .annual-year-mode-btn { min-height:42px; } }
+
     </style>
 </head>
 <body>
@@ -904,15 +910,21 @@
                 <div class="annual-year-header">
                     <div>
                         <div class="section-title" style="margin-bottom:3px;">REKAP TAHUNAN & FINALISASI ARSIP</div>
-                        <div class="annual-year-subtitle">Pengelompokan mengikuti tanggal pengiriman, bukan awalan Job Order.</div>
+                        <div class="annual-year-subtitle">Pilih pengelompokan berdasarkan tahun pada nomor JO atau tanggal pengiriman.</div>
                     </div>
                     <button type="button" class="btn-archive-view annual-refresh-btn" id="btnAnnualRefresh" onclick="loadAnnualArchiveSummary()">Muat Ulang Rekap</button>
                 </div>
+                <div class="annual-year-mode" role="group" aria-label="Dasar pengelompokan rekap tahunan">
+                    <button type="button" id="annualModeDateBtn" class="annual-year-mode-btn is-active" aria-pressed="true" onclick="pilihModeRekapTahunan('tanggal')">Berdasarkan Tanggal Pengiriman</button>
+                    <button type="button" id="annualModeJOBtn" class="annual-year-mode-btn" aria-pressed="false" onclick="pilihModeRekapTahunan('jo')">Berdasarkan Nomor JO</button>
+                </div>
+                <div id="annualGroupingInfo" class="annual-grouping-info">Backup dan finalisasi menggunakan tahun tanggal pengiriman.</div>
                 <div class="annual-year-table-wrap">
+
                     <table class="desktop-table annual-year-desktop">
                         <colgroup><col style="width:10%"><col style="width:14%"><col style="width:13%"><col style="width:12%"><col style="width:16%"><col style="width:35%"></colgroup>
                         <thead><tr>
-                            <th>Tahun</th><th>Total JO</th><th>Closed</th><th>Open</th><th>Total Hasil</th><th>Status Tahunan</th>
+                            <th>Tahun</th><th>Total JO</th><th>Closed</th><th>Open</th><th>Total Hasil</th><th id="annualYearStatusHeading">Status Tahunan</th>
                         </tr></thead>
                         <tbody id="annualYearTableBody">
                             <tr><td colspan="6" style="text-align:center;color:#718093;">Memuat rekap tahunan...</td></tr>
@@ -922,6 +934,7 @@
                 <div id="annualYearCards" class="annual-year-cards" aria-live="polite">
                     <div class="annual-year-empty">Memuat rekap tahunan...</div>
                 </div>
+                <div id="annualBackupTools">
                 <div class="annual-year-select-row">
                     <div class="annual-year-select-field">
                         <label for="annualYearSelect">Pilih Tahun untuk Backup / Finalisasi</label>
@@ -943,7 +956,8 @@
                     <button type="button" class="btn-clear" id="btnAnnualPurge" onclick="hapusCloudTahunan()" disabled>Hapus Data Cloud Tahun Ini</button>
                 </div>
                 <div id="annualBackupFileName" class="annual-file-name">Belum ada file backup yang dipilih untuk diverifikasi.</div>
-                <div id="annualArchiveMessage" role="status" class="annual-archive-message">Backup dan penghapusan cloud adalah dua tindakan terpisah. Penghapusan hanya terbuka setelah file backup berhasil diverifikasi.</div>
+                </div>
+                <div id="annualArchiveMessage" role="status" class="annual-archive-message">Backup dan penghapusan cloud mengikuti tahun tanggal pengiriman. Penghapusan hanya terbuka setelah file backup berhasil diverifikasi.</div>
             </div>
             </section>
             <nav class="archive-tabs" role="tablist" aria-label="Menu Arsip Closed">
@@ -1066,7 +1080,10 @@
         
         let currentUser = ""; 
         let currentRole = "";
-        let annualYearSummaries = [];
+        let annualYearSummaries = []; // Backup/finalization remains delivery-date based.
+        let annualYearSummariesByJO = [];
+        let annualUnclassifiedJOCount = 0;
+        let annualGroupingMode = "tanggal";
         let annualSelectedBackupFile = null;
         let annualManifestState = "";
         let annualManifestSha256 = "";
@@ -3068,6 +3085,8 @@
             return ({
                 FINAL: "FINAL — siap backup dan verifikasi",
                 BACKED_UP: "BACKUP TERVERIFIKASI — DATA CLOUD SUDAH DIBERSIHKAN",
+                HAS_OPEN: "MASIH ADA JO OPEN",
+                ALL_CLOSED: "SEMUA JO CLOSED",
                 WAITING_FINALIZATION: "MENUNGGU FINALISASI — masih ada JO Open / belum masuk arsip H+1",
                 RUNNING: "BERJALAN — tahun berjalan",
                 UPCOMING: "BELUM DIMULAI"
@@ -3159,7 +3178,11 @@
             if (message) message.textContent = "Mengambil rekap seluruh tahun dari Firestore...";
             try {
                 const result = await annualArchiveApi("admin-summary");
-                annualYearSummaries = Array.isArray(result.years) ? result.years : [];
+                annualYearSummaries = Array.isArray(result.yearsByDeliveryDate)
+                    ? result.yearsByDeliveryDate
+                    : (Array.isArray(result.years) ? result.years : []);
+                annualYearSummariesByJO = Array.isArray(result.yearsByJO) ? result.yearsByJO : [];
+                annualUnclassifiedJOCount = Number(result.unclassifiedJOCount || 0);
                 const select = document.getElementById("annualYearSelect");
                 const previous = select?.value || "";
                 if (select) {
@@ -3173,10 +3196,11 @@
                     if (previous && annualYearSummaries.some(item => item.year === previous)) select.value = previous;
                     else if (annualYearSummaries.length) select.value = annualYearSummaries[0].year;
                 }
+                pilihModeRekapTahunan(annualGroupingMode);
                 renderAnnualYearTable();
                 await loadAnnualBackupManifest();
                 if (message) message.textContent = "Rekap tahunan diperbarui dari " +
-                    annualYearSummaries.length.toLocaleString("id-ID") + " tahun data. Pengelompokan memakai tanggal pengiriman.";
+                    annualYearSummaries.length.toLocaleString("id-ID") + " tahun tanggal pengiriman dan " + annualYearSummariesByJO.length.toLocaleString("id-ID") + " tahun JO.";
             } catch (error) {
                 if (message) message.textContent = "Rekap tahunan belum dapat dimuat: " + (error.message || "Kesalahan koneksi.");
                 console.error("Annual shipment summary:", error);
@@ -3186,6 +3210,34 @@
                 if (refresh) { refresh.disabled = false; refresh.textContent = "Muat Ulang Rekap"; }
             }
         };
+        window.pilihModeRekapTahunan = function(mode) {
+            annualGroupingMode = mode === "jo" ? "jo" : "tanggal";
+            const dateButton = document.getElementById("annualModeDateBtn");
+            const joButton = document.getElementById("annualModeJOBtn");
+            const backupTools = document.getElementById("annualBackupTools");
+            const info = document.getElementById("annualGroupingInfo");
+            const statusHeading = document.getElementById("annualYearStatusHeading");
+            const isJO = annualGroupingMode === "jo";
+            if (dateButton) {
+                dateButton.classList.toggle("is-active", !isJO);
+                dateButton.setAttribute("aria-pressed", String(!isJO));
+            }
+            if (joButton) {
+                joButton.classList.toggle("is-active", isJO);
+                joButton.setAttribute("aria-pressed", String(isJO));
+            }
+            if (backupTools) backupTools.style.display = isJO ? "none" : "block";
+            if (statusHeading) statusHeading.textContent = isJO ? "Status JO" : "Status Tahunan";
+            if (info) {
+                info.textContent = isJO
+                    ? "Tahun diambil dari 2 digit pada nomor JO, misalnya JE26-0655 masuk 2026. JO yang format tahunnya tidak terbaca: " +
+                      annualUnclassifiedJOCount.toLocaleString("id-ID") +
+                      ". Kategori ini untuk laporan; backup dan penghapusan tetap berdasarkan tanggal pengiriman."
+                    : "Tahun diambil dari tanggal pengiriman. Backup JSON, verifikasi, finalisasi H+1, dan penghapusan cloud hanya menggunakan kategori ini.";
+            }
+            renderAnnualYearTable();
+        };
+
         function selectedAnnualSummary() {
             const year = document.getElementById("annualYearSelect")?.value || "";
             return annualYearSummaries.find(item => String(item.year) === year) || null;
@@ -3193,9 +3245,10 @@
         function renderAnnualYearTable() {
             const body = document.getElementById("annualYearTableBody");
             const cards = document.getElementById("annualYearCards");
+            const summaries = annualGroupingMode === "jo" ? annualYearSummariesByJO : annualYearSummaries;
             if (body) body.innerHTML = "";
             if (cards) cards.innerHTML = "";
-            if (!annualYearSummaries.length) {
+            if (!summaries.length) {
                 if (body) body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718093;">Belum ada data pengiriman bertanggal.</td></tr>';
                 if (cards) {
                     const empty = document.createElement("div");
@@ -3206,7 +3259,7 @@
                 renderSelectedAnnualYear();
                 return;
             }
-            annualYearSummaries.forEach(item => {
+            summaries.forEach(item => {
                 const values = [
                     item.year, formatAnnualNumber(item.totalJO), formatAnnualNumber(item.closedJO),
                     formatAnnualNumber(item.openJO), formatAnnualNumber(item.totalHasil), annualStatusLabel(item.status)
@@ -3215,7 +3268,7 @@
                     const tr = document.createElement("tr");
                     values.forEach((value, index) => {
                         const td = document.createElement("td");
-                        if (index === 0 && String(item.year) === "2026") {
+                        if (annualGroupingMode === "tanggal" && index === 0 && String(item.year) === "2026") {
                             const year = document.createElement("strong");
                             year.textContent = "2026";
                             const note = document.createElement("small");
@@ -3255,7 +3308,7 @@
                             metric.append(caption, number);
                             grid.appendChild(metric);
                         });
-                    if (String(item.year) === "2026") {
+                    if (annualGroupingMode === "tanggal" && String(item.year) === "2026") {
                         const coverage = document.createElement("div");
                         coverage.className = "annual-coverage-note";
                         coverage.textContent = "Arsip JO CLOSED mulai 10 November 2026";
@@ -3266,7 +3319,7 @@
                     cards.appendChild(card);
                 }
             });
-            renderSelectedAnnualYear();
+            if (annualGroupingMode === "tanggal") renderSelectedAnnualYear();
         }
         window.pilihTahunAnnual = async function() {
             renderSelectedAnnualYear();
