@@ -1070,6 +1070,7 @@
         let annualSelectedBackupFile = null;
         let annualManifestState = "";
         let annualManifestSha256 = "";
+        let annualAdminRefreshPromise = null;
 
         let lastDeletedItem = null;
         let undoTimer = null;
@@ -3073,39 +3074,50 @@
             })[status] || status || "Status tidak tersedia";
         }
         async function refreshAnnualAdminSession() {
-            const refreshToken = sessionStorage.getItem("assembly_admin_refresh_token") || "";
-            if (!refreshToken) {
-                throw new Error("Sesi Admin telah berakhir. Silakan login kembali.");
-            }
+            // Avoid parallel refresh calls rotating the same Supabase refresh token twice.
+            if (annualAdminRefreshPromise) return await annualAdminRefreshPromise;
 
-            let response;
-            try {
-                response = await fetch(SUPABASE_URL + "/auth/v1/token?grant_type=refresh_token", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "apikey": SUPABASE_PUBLISHABLE_KEY
-                    },
-                    body: JSON.stringify({ refresh_token: refreshToken })
-                });
-            } catch (_) {
-                throw new Error("Koneksi untuk memperbarui sesi Admin gagal. Periksa internet lalu tekan Muat Ulang Rekap.");
-            }
-
-            const session = await response.json().catch(() => ({}));
-            if (!response.ok || !session.access_token || !session.refresh_token) {
-                if ([400, 401, 403].includes(response.status)) {
-                    sessionStorage.removeItem("assembly_admin_access_token");
-                    sessionStorage.removeItem("assembly_admin_refresh_token");
+            annualAdminRefreshPromise = (async () => {
+                const refreshToken = sessionStorage.getItem("assembly_admin_refresh_token") || "";
+                if (!refreshToken) {
+                    throw new Error("Sesi Admin telah berakhir. Silakan login kembali.");
                 }
-                throw new Error(session.msg || session.message ||
-                    "Sesi Admin tidak dapat diperpanjang. Silakan login kembali.");
-            }
 
-            // Supabase rotates refresh tokens; always store the newly issued pair together.
-            sessionStorage.setItem("assembly_admin_access_token", session.access_token);
-            sessionStorage.setItem("assembly_admin_refresh_token", session.refresh_token);
-            return session.access_token;
+                let response;
+                try {
+                    response = await fetch(SUPABASE_URL + "/auth/v1/token?grant_type=refresh_token", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "apikey": SUPABASE_PUBLISHABLE_KEY
+                        },
+                        body: JSON.stringify({ refresh_token: refreshToken })
+                    });
+                } catch (_) {
+                    throw new Error("Koneksi untuk memperbarui sesi Admin gagal. Periksa internet lalu tekan Muat Ulang Rekap.");
+                }
+
+                const session = await response.json().catch(() => ({}));
+                if (!response.ok || !session.access_token || !session.refresh_token) {
+                    if ([400, 401, 403].includes(response.status)) {
+                        sessionStorage.removeItem("assembly_admin_access_token");
+                        sessionStorage.removeItem("assembly_admin_refresh_token");
+                    }
+                    throw new Error(session.msg || session.message ||
+                        "Sesi Admin tidak dapat diperpanjang. Silakan login kembali.");
+                }
+
+                // Supabase rotates refresh tokens; store the newly issued pair together.
+                sessionStorage.setItem("assembly_admin_access_token", session.access_token);
+                sessionStorage.setItem("assembly_admin_refresh_token", session.refresh_token);
+                return session.access_token;
+            })();
+
+            try {
+                return await annualAdminRefreshPromise;
+            } finally {
+                annualAdminRefreshPromise = null;
+            }
         }
 
         async function annualArchiveApi(action, payload = {}) {
