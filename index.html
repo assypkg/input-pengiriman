@@ -3198,9 +3198,11 @@
                 }
                 pilihModeRekapTahunan(annualGroupingMode);
                 renderAnnualYearTable();
-                await loadAnnualBackupManifest();
-                if (message) message.textContent = "Rekap tahunan diperbarui dari " +
-                    annualYearSummaries.length.toLocaleString("id-ID") + " tahun tanggal pengiriman dan " + annualYearSummariesByJO.length.toLocaleString("id-ID") + " tahun JO.";
+                if (annualGroupingMode === "tanggal") await loadAnnualBackupManifest();
+                if (message) message.textContent = annualGroupingMode === "jo"
+                    ? "Rekap berdasarkan tahun JO berhasil diperbarui. JO yang formatnya tidak terbaca: " + annualUnclassifiedJOCount.toLocaleString("id-ID") + "."
+                    : "Rekap tahunan diperbarui dari " + annualYearSummaries.length.toLocaleString("id-ID") +
+                      " tahun tanggal pengiriman dan " + annualYearSummariesByJO.length.toLocaleString("id-ID") + " tahun JO.";
             } catch (error) {
                 if (message) message.textContent = "Rekap tahunan belum dapat dimuat: " + (error.message || "Kesalahan koneksi.");
                 console.error("Annual shipment summary:", error);
@@ -3228,6 +3230,10 @@
             }
             if (backupTools) backupTools.style.display = isJO ? "none" : "block";
             if (statusHeading) statusHeading.textContent = isJO ? "Status JO" : "Status Tahunan";
+            const message = document.getElementById("annualArchiveMessage");
+            if (message && isJO) {
+                message.textContent = "Kategori berdasarkan nomor JO hanya untuk laporan. Backup, verifikasi, dan penghapusan cloud tetap menggunakan kategori tanggal pengiriman.";
+            }
             if (info) {
                 info.textContent = isJO
                     ? "Tahun diambil dari 2 digit pada nomor JO, misalnya JE26-0655 masuk 2026. JO yang format tahunnya tidak terbaca: " +
