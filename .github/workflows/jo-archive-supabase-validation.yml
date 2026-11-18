@@ -107,6 +107,12 @@ jobs:
               'id="archiveAnnualTabBtn"',
               "window.pilihTabArsipJO",
               'annualArchiveApi("admin-summary")',
+              "function refreshAnnualAdminSession()",
+              "/auth/v1/token?grant_type=refresh_token",
+              "sessionStorage.setItem(\"assembly_admin_refresh_token\", session.refresh_token)",
+              "response.status === 401",
+              "Arsip JO CLOSED mulai 10 November 2026",
+              "annual-coverage-note",
               "active-record-identity",
               "active-record-fg",
               "active-record-qty-grid",
@@ -196,6 +202,11 @@ jobs:
               'recordsSha256',
               'delivery_date_year',
           ]
+          # Admin summary must recognize YYYY delivery-date years with one regex escape.
+          if r'if (!/^\d{4}$/.test(rowYear)) continue;' not in source:
+              raise SystemExit("Admin annual summary must use a single escaped digit-class pattern.")
+          if r'if (!/^\\d{4}$/.test(rowYear)) continue;' in source:
+              raise SystemExit("Admin annual summary contains a double-escaped year pattern.")
           for marker in required:
               if marker not in source:
                   raise SystemExit("Missing annual archive safety marker: " + marker)
