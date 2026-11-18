@@ -324,6 +324,151 @@ async function getYearRows(year: string) {
     .sort((a, b) => a.id.localeCompare(b.id));
   return { firebase, rows, summary: summarizeYear(rows, year) };
 }
+
+function parseJobOrderYear(value: unknown): string {
+  const jobOrder = String(value || "").trim().toUpperCase();
+  // Examples: JD26-0800, JE26-0655. Unknown formats are kept outside year totals.
+  const match = jobOrder.match(/^[A-Z]{2}(\\d{2})-/);
+  return match ? "20" + match[1] : "";
+}
+
+function summarizeJobOrderManifest(records: Array<Record<string, any>>) {
+  const jobOrders = new Map<string, any>();
+  const unclassified = new Set<string>();
+  for (const record of records) {
+    const jobOrder = String(record.jobOrder || "").trim();
+    const year = parseJobOrderYear(jobOrder);
+    if (!year) {
+      unclassified.add(jobOrder || String(record.docId || "TANPA_NOMOR_JO"));
+      continue;
+    }
+    const existing = jobOrders.get(jobOrder) || {
+      jobOrder, year, totalOrder: 0, totalHasil: 0, totalSisa: 0,
+      open: false, rows: 0, invalidRows: 0,
+    };
+    const order = Number(record.order || 0);
+    const hasil = Number(record.hasil || 0);
+    const remaining = remainingQty(record);
+    if (Number.isFinite(order)) existing.totalOrder += order;
+    if (Number.isFinite(hasil)) existing.totalHasil += hasil;
+    if (Number.isFinite(remaining)) existing.totalSisa += remaining;
+    if (!Number.isFinite(remaining)) {
+      existing.open = true;
+      existing.invalidRows++;
+    } else if (remaining > 0) {
+      existing.open = true;
+    }
+    existing.rows++;
+    jobOrders.set(jobOrder, existing);
+  }
+  return {
+    jobOrders: Array.from(jobOrders.values()),
+    unclassifiedJobOrders: Array.from(unclassified),
+  };
+}
+
+async function buildJobOrderYearSummaries(
+  context: Context,
+  rows: Array<{ id: string; record: Record<string, any> }>,
+) {
+  const byJobOrder = new Map<string, any>();
+  const unclassified = new Set<string>();
+
+  const addJobOrder = (value: any) => {
+    const jobOrder = String(value?.jobOrder || "").trim();
+    const year = validYear(value?.year) || parseJobOrderYear(jobOrder);
+    if (!jobOrder || !year) {
+      if (jobOrder) unclassified.add(jobOrder);
+      return;
+    }
+    const state = byJobOrder.get(jobOrder) || {
+      jobOrder, year, totalOrder: 0, totalHasil: 0, totalSisa: 0,
+      open: false, rows: 0, invalidRows: 0,
+    };
+    state.totalOrder += Number.isFinite(Number(value.totalOrder)) ? Number(value.totalOrder) : 0;
+    state.totalHasil += Number.isFinite(Number(value.totalHasil)) ? Number(value.totalHasil) : 0;
+    state.totalSisa += Number.isFinite(Number(value.totalSisa)) ? Number(value.totalSisa) : 0;
+    state.open = state.open || value.open === true;
+    state.rows += Math.max(0, Number(value.rows || 0));
+    state.invalidRows += Math.max(0, Number(value.invalidRows || 0));
+    byJobOrder.set(jobOrder, state);
+  };
+
+  for (const row of rows) {
+    const jobOrder = String(row.record.jobOrder || "").trim();
+    const year = parseJobOrderYear(jobOrder);
+    if (!jobOrder || !year) {
+      unclassified.add(jobOrder || row.id);
+      continue;
+    }
+    const remaining = remainingQty(row.record);
+    addJobOrder({
+      jobOrder,
+      year,
+      totalOrder: Number(row.record.order || 0),
+      totalHasil: Number(row.record.hasil || 0),
+      totalSisa: Number.isFinite(remaining) ? remaining : 0,
+      open: !Number.isFinite(remaining) || remaining > 0,
+      rows: 1,
+      invalidRows: Number.isFinite(remaining) ? 0 : 1,
+    });
+  }
+
+  // When a delivery-year backup is purged, its compact JO totals remain in the
+  // manifest so the separate JO-year report does not lose historical totals.
+  const files = await listAnnualManifests(context);
+  for (const file of files) {
+    const path = String(file.name).startsWith(MANIFEST_PREFIX)
+      ? String(file.name)
+      : MANIFEST_PREFIX + String(file.name);
+    const manifest = await getStoredJson(context, path);
+    if (!manifest || manifest.state !== "DELETED") continue;
+    for (const item of Array.isArray(manifest.jobOrders) ? manifest.jobOrders : []) {
+      addJobOrder(item);
+    }
+    for (const name of Array.isArray(manifest.unclassifiedJobOrders) ? manifest.unclassifiedJobOrders : []) {
+      unclassified.add(String(name));
+    }
+  }
+
+  const grouped = new Map<string, any[]>();
+  for (const item of byJobOrder.values()) {
+    if (!grouped.has(item.year)) grouped.set(item.year, []);
+    grouped.get(item.year)!.push(item);
+  }
+  const currentYear = jakartaToday().slice(0, 4);
+  const years = Array.from(grouped.entries()).map(([year, items]) => {
+    const totalJO = items.length;
+    const openJO = items.filter(item => item.open).length;
+    const closedJO = totalJO - openJO;
+    const totalRecords = items.reduce((sum, item) => sum + item.rows, 0);
+    const totalOrder = items.reduce((sum, item) => sum + item.totalOrder, 0);
+    const totalHasil = items.reduce((sum, item) => sum + item.totalHasil, 0);
+    const totalSisa = items.reduce((sum, item) => sum + item.totalSisa, 0);
+    const invalidRows = items.reduce((sum, item) => sum + item.invalidRows, 0);
+    return {
+      year,
+      status: openJO > 0 ? "HAS_OPEN" : "ALL_CLOSED",
+      totalRecords,
+      totalJO,
+      closedJO,
+      openJO,
+      totalOrder,
+      totalHasil,
+      totalSisa,
+      invalidRows,
+      reportGrouping: "job_order_year",
+      currentCalendarYear: year === currentYear,
+    };
+  }).sort((a, b) => String(b.year).localeCompare(String(a.year)));
+
+  return {
+    years,
+    unclassifiedJOCount: unclassified.size,
+    unclassifiedRows: unclassified.size,
+  };
+}
+
 function sameArchiveRecord(current: Record<string, any>, stored: Record<string, any>): boolean {
   const textFields = ["tanggal", "jobOrder", "poNum", "kodeItem", "produk", "ket"];
   const numberFields = ["order", "hasil", "sisa"];
@@ -429,7 +574,17 @@ Deno.serve(async (req: Request) => {
       let summaries = Array.from(byYear.entries())
         .map(([year, yearRows]) => summarizeYear(yearRows, year));
       summaries = await mergeDeletedAnnualSummaries(context, summaries);
-      return json({ success: true, years: summaries, grouping: "delivery_date_year" });
+      const jobOrderRecap = await buildJobOrderYearSummaries(context, rows);
+      return json({
+        success: true,
+        years: summaries,
+        yearsByDeliveryDate: summaries,
+        yearsByJO: jobOrderRecap.years,
+        unclassifiedJOCount: jobOrderRecap.unclassifiedJOCount,
+        unclassifiedRows: jobOrderRecap.unclassifiedRows,
+        grouping: "delivery_date_year",
+        jobOrderGrouping: "job_order_year",
+      });
     }
 
     if (action === "admin-summary") {
@@ -448,8 +603,19 @@ Deno.serve(async (req: Request) => {
       if (!byYear.has(currentYear)) byYear.set(currentYear, []);
       let years = Array.from(byYear.entries())
         .map(([rowYear, yearRows]) => summarizeYear(yearRows, rowYear));
-      years = await mergeDeletedAnnualSummaries({ url: Deno.env.get("SUPABASE_URL") || "", serviceKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "" }, years);
-      return json({ success: true, years, grouping: "delivery_date_year" });
+      const context = { url: Deno.env.get("SUPABASE_URL") || "", serviceKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "" };
+      years = await mergeDeletedAnnualSummaries(context, years);
+      const jobOrderRecap = await buildJobOrderYearSummaries(context, rows);
+      return json({
+        success: true,
+        years,
+        yearsByDeliveryDate: years,
+        yearsByJO: jobOrderRecap.years,
+        unclassifiedJOCount: jobOrderRecap.unclassifiedJOCount,
+        unclassifiedRows: jobOrderRecap.unclassifiedRows,
+        grouping: "delivery_date_year",
+        jobOrderGrouping: "job_order_year",
+      });
     }
 
     const authorized = await authorizeAdmin(req);
@@ -498,6 +664,7 @@ Deno.serve(async (req: Request) => {
         recordsSha256: snapshot.recordsSha256,
         recordsCount: snapshot.records.length,
         summary: snapshot.summary,
+        ...summarizeJobOrderManifest(snapshot.records),
         verifiedAt: new Date().toISOString(),
         verifiedBy: profile.username,
       };
