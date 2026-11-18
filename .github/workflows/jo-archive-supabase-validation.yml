@@ -209,6 +209,14 @@ jobs:
               'confirmation !== year',
               'recordsSha256',
               'delivery_date_year',
+              'function parseJobOrderYear(value: unknown)',
+              'jobOrder.match(/^[A-Z]{2}(\\d{2})-/)',
+              'function summarizeJobOrderManifest(records:',
+              'async function buildJobOrderYearSummaries(',
+              'yearsByJO: jobOrderRecap.years',
+              'unclassifiedJOCount: jobOrderRecap.unclassifiedJOCount',
+              '...summarizeJobOrderManifest(snapshot.records)',
+              'reportGrouping: "job_order_year"',
           ]
           # Admin summary must recognize YYYY delivery-date years with one regex escape.
           if r'if (!/^\d{4}$/.test(rowYear)) continue;' not in source:
