@@ -336,10 +336,10 @@ function summarizeJobOrderManifest(records: Array<Record<string, any>>) {
   const jobOrders = new Map<string, any>();
   const unclassified = new Set<string>();
   for (const record of records) {
-    const jobOrder = String(record.jobOrder || "").trim();
+    const jobOrder = String(record.jobOrder || "").trim().toUpperCase();
     const year = parseJobOrderYear(jobOrder);
     if (!year) {
-      unclassified.add(jobOrder || String(record.docId || "TANPA_NOMOR_JO"));
+      unclassified.add(jobOrder || "TANPA NOMOR JO");
       continue;
     }
     const existing = jobOrders.get(jobOrder) || {
@@ -375,7 +375,7 @@ async function buildJobOrderYearSummaries(
   const unclassified = new Set<string>();
 
   const addJobOrder = (value: any) => {
-    const jobOrder = String(value?.jobOrder || "").trim();
+    const jobOrder = String(value?.jobOrder || "").trim().toUpperCase();
     const year = validYear(value?.year) || parseJobOrderYear(jobOrder);
     if (!jobOrder || !year) {
       if (jobOrder) unclassified.add(jobOrder);
@@ -395,10 +395,10 @@ async function buildJobOrderYearSummaries(
   };
 
   for (const row of rows) {
-    const jobOrder = String(row.record.jobOrder || "").trim();
+    const jobOrder = String(row.record.jobOrder || "").trim().toUpperCase();
     const year = parseJobOrderYear(jobOrder);
     if (!jobOrder || !year) {
-      unclassified.add(jobOrder || row.id);
+      unclassified.add(jobOrder || "TANPA NOMOR JO");
       continue;
     }
     const remaining = remainingQty(row.record);
