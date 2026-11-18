@@ -910,7 +910,7 @@
                 <div class="annual-year-header">
                     <div>
                         <div class="section-title" style="margin-bottom:3px;">REKAP TAHUNAN & FINALISASI ARSIP</div>
-                        <div class="annual-year-subtitle">Pilih pengelompokan berdasarkan tahun pada nomor JO atau tanggal pengiriman.</div>
+                        <div class="annual-year-subtitle">Bandingkan rekap tahunan berdasarkan nomor JO dan tanggal pengiriman. Backup cloud mengikuti tahun tanggal pengiriman.</div>
                     </div>
                     <button type="button" class="btn-archive-view annual-refresh-btn" id="btnAnnualRefresh" onclick="loadAnnualArchiveSummary()">Muat Ulang Rekap</button>
                 </div>
@@ -3249,14 +3249,25 @@
             if (body) body.innerHTML = "";
             if (cards) cards.innerHTML = "";
             if (!summaries.length) {
-                if (body) body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718093;">Belum ada data pengiriman bertanggal.</td></tr>';
+                const emptyLabel = annualGroupingMode === "jo"
+                    ? "Belum ada nomor JO dengan format tahun yang dapat dibaca."
+                    : "Belum ada data pengiriman bertanggal.";
+                if (body) {
+                    const tr = document.createElement("tr");
+                    const td = document.createElement("td");
+                    td.colSpan = 6;
+                    td.style.textAlign = "center";
+                    td.textContent = emptyLabel;
+                    tr.appendChild(td);
+                    body.appendChild(tr);
+                }
                 if (cards) {
                     const empty = document.createElement("div");
                     empty.className = "annual-year-empty";
-                    empty.textContent = "Belum ada data pengiriman bertanggal.";
+                    empty.textContent = emptyLabel;
                     cards.appendChild(empty);
                 }
-                renderSelectedAnnualYear();
+                if (annualGroupingMode === "tanggal") renderSelectedAnnualYear();
                 return;
             }
             summaries.forEach(item => {
