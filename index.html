@@ -2473,19 +2473,41 @@
         // Arsip otomatis dipicu server scheduler, bukan timer browser Admin.
 
         async function callArchiveApi(payload) {
-            const accessToken = sessionStorage.getItem("assembly_admin_access_token");
-            if (!accessToken) throw new Error("Sesi Supabase berakhir. Silakan login kembali.");
-            const response = await fetch(SUPABASE_URL + "/functions/v1/archive-closed-deliveries", {
+            // Samakan mekanisme sesi dengan Rekap Tahunan: refresh token bila access token kedaluwarsa.
+            let accessToken = sessionStorage.getItem("assembly_admin_access_token") || "";
+            if (!accessToken) accessToken = await refreshAnnualAdminSession();
+
+            const sendRequest = token => fetch(SUPABASE_URL + "/functions/v1/archive-closed-deliveries", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     "apikey": SUPABASE_PUBLISHABLE_KEY,
-                    "Authorization": "Bearer " + accessToken
+                    "Authorization": "Bearer " + token
                 },
                 body: JSON.stringify(payload)
             });
-            const result = await response.json().catch(() => ({}));
+
+            let response = await sendRequest(accessToken);
+            let result = await response.json().catch(() => ({}));
+            const isSessionError = (res, data) =>
+                res.status === 401 ||
+                /sesi supabase.*(tidak valid|berakhir)|(?:jwt|token).*(expired|invalid)|(?:expired|invalid).*(?:jwt|token)/i
+                    .test(String(data?.error || data?.message || ""));
+
+            // Access token dapat kedaluwarsa ketika halaman dibiarkan terbuka.
+            // Perbarui sesi satu kali, lalu ulangi permintaan pemulihan/arsip.
+            if (isSessionError(response, result)) {
+                accessToken = await refreshAnnualAdminSession();
+                response = await sendRequest(accessToken);
+                result = await response.json().catch(() => ({}));
+            }
+
             if (!response.ok || result.success !== true) {
+                if (isSessionError(response, result)) {
+                    sessionStorage.removeItem("assembly_admin_access_token");
+                    sessionStorage.removeItem("assembly_admin_refresh_token");
+                    throw new Error("Sesi Admin tidak dapat diverifikasi setelah diperbarui. Silakan login kembali.");
+                }
                 throw new Error(result.error || "Permintaan arsip ke Supabase gagal.");
             }
             return result;
